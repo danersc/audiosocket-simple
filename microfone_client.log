@@ -1,0 +1,148 @@
+2025-04-15 23:04:05,739 - __main__ - INFO - Conectado ao servidor AudioSocket em 127.0.0.1:8080
+2025-04-15 23:04:05,739 - __main__ - INFO - ID da chamada: 5586f0e985e043f3a3720fc486c7e740
+2025-04-15 23:04:05,740 - __main__ - INFO - Streaming de áudio iniciado
+2025-04-15 23:04:05,898 - __main__ - INFO - 
+Dispositivos de entrada disponíveis:
+[1] Microfone(Intelbras CAM-1080p)
+[2] Microfone (MacBook Air)
+[4] Microfone do iPhone Daner
+
+2025-04-15 23:04:08,000 - __main__ - INFO - Thread de recebimento de áudio iniciada
+2025-04-15 23:04:08,073 - __main__ - INFO - Captura de áudio iniciada. Falando para o sistema...
+2025-04-15 23:04:29,385 - __main__ - INFO - Thread de captura de áudio finalizada
+2025-04-15 23:04:29,507 - __main__ - INFO - Thread de recebimento de áudio finalizada
+2025-04-15 23:04:29,508 - __main__ - INFO - Streaming de áudio finalizado
+2025-04-15 23:04:29,508 - __main__ - INFO - Desconectado do servidor AudioSocket
+2025-04-15 23:05:35,532 - __main__ - INFO - Conectado ao servidor AudioSocket em 127.0.0.1:8080
+2025-04-15 23:05:35,532 - __main__ - INFO - ID da chamada: c56a9ed723194ee48e0df003029955e1
+2025-04-15 23:05:35,533 - __main__ - INFO - Streaming de áudio iniciado
+2025-04-15 23:05:41,759 - __main__ - INFO - Conectado ao servidor AudioSocket em 127.0.0.1:8080
+2025-04-15 23:05:41,759 - __main__ - INFO - ID da chamada: ff2c79c8bca24ea7871c2a43d55b78d0
+2025-04-15 23:05:41,760 - __main__ - INFO - Streaming de áudio iniciado
+2025-04-15 23:05:41,837 - __main__ - INFO - 
+Dispositivos de entrada disponíveis:
+[1] Microfone(Intelbras CAM-1080p)
+[2] Microfone (MacBook Air)
+[4] Microfone do iPhone Daner
+
+2025-04-15 23:05:41,890 - __main__ - INFO - Thread de recebimento de áudio iniciada
+2025-04-15 23:05:41,947 - __main__ - INFO - Captura de áudio iniciada. Falando para o sistema...
+2025-04-15 23:06:41,611 - __main__ - INFO - Thread de recebimento de áudio finalizada
+2025-04-15 23:06:41,623 - __main__ - INFO - Thread de captura de áudio finalizada
+2025-04-15 23:06:41,624 - __main__ - INFO - Streaming de áudio finalizado
+2025-04-15 23:06:41,624 - __main__ - INFO - Desconectado do servidor AudioSocket
+2025-04-15 23:10:56,789 - __main__ - INFO - Conectado ao servidor AudioSocket em 127.0.0.1:8080
+2025-04-15 23:10:56,789 - __main__ - INFO - ID da chamada: bde63d0994614d75b1544ab54ef4d934
+2025-04-15 23:10:56,789 - __main__ - INFO - Streaming de áudio iniciado
+2025-04-15 23:10:56,934 - __main__ - INFO - 
+Dispositivos de entrada disponíveis:
+[1] Microfone(Intelbras CAM-1080p)
+[2] Microfone (MacBook Air)
+[4] Microfone do iPhone Daner
+[5] Microsoft Teams Audio
+
+2025-04-15 23:10:56,989 - __main__ - INFO - Thread de recebimento de áudio iniciada
+2025-04-15 23:10:57,045 - __main__ - INFO - Captura de áudio iniciada. Falando para o sistema...
+2025-04-15 23:11:02,058 - __main__ - INFO - Thread de recebimento de áudio finalizada
+2025-04-15 23:11:02,065 - __main__ - INFO - Thread de captura de áudio finalizada
+2025-04-15 23:11:02,065 - __main__ - INFO - Streaming de áudio finalizado
+2025-04-15 23:11:02,066 - __main__ - INFO - Desconectado do servidor AudioSocket
+2025-04-15 23:11:10,029 - __main__ - INFO - Conectado ao servidor AudioSocket em 127.0.0.1:8080
+2025-04-15 23:11:10,029 - __main__ - INFO - ID da chamada: bead10651ede46828a6dd9b9f752e104
+2025-04-15 23:11:10,029 - __main__ - INFO - Streaming de áudio iniciado
+2025-04-15 23:11:10,108 - __main__ - INFO - 
+Dispositivos de entrada disponíveis:
+[1] Microfone(Intelbras CAM-1080p)
+[2] Microfone (MacBook Air)
+[4] Microfone do iPhone Daner
+[5] Microsoft Teams Audio
+
+2025-04-15 23:11:10,146 - __main__ - INFO - Thread de recebimento de áudio iniciada
+2025-04-15 23:11:10,186 - __main__ - INFO - Captura de áudio iniciada. Falando para o sistema...
+2025-04-15 23:11:24,321 - __main__ - INFO - Thread de recebimento de áudio finalizada
+2025-04-15 23:11:24,330 - __main__ - INFO - Thread de captura de áudio finalizada
+2025-04-15 23:11:24,331 - __main__ - INFO - Streaming de áudio finalizado
+2025-04-15 23:11:24,331 - __main__ - INFO - Desconectado do servidor AudioSocket
+2025-04-15 23:12:30,083 - __main__ - INFO - Conectado ao servidor AudioSocket em 127.0.0.1:8080
+2025-04-15 23:12:30,083 - __main__ - INFO - ID da chamada: d6d920a35fd841babec7b87854703930
+2025-04-15 23:12:30,083 - __main__ - INFO - Streaming de áudio iniciado
+2025-04-15 23:12:30,168 - __main__ - INFO - 
+Dispositivos de entrada disponíveis:
+[1] Microfone(Intelbras CAM-1080p)
+[2] Microfone (MacBook Air)
+[4] Microfone do iPhone Daner
+[5] Microsoft Teams Audio
+
+2025-04-15 23:12:30,206 - __main__ - INFO - Thread de recebimento de áudio iniciada
+2025-04-15 23:12:30,262 - __main__ - INFO - Captura de áudio iniciada. Falando para o sistema...
+2025-04-15 23:12:40,080 - __main__ - INFO - Thread de recebimento de áudio finalizada
+2025-04-15 23:12:40,080 - __main__ - INFO - Thread de captura de áudio finalizada
+2025-04-15 23:12:40,082 - __main__ - INFO - Streaming de áudio finalizado
+2025-04-15 23:12:40,082 - __main__ - INFO - Desconectado do servidor AudioSocket
+2025-04-15 23:18:58,452 - __main__ - INFO - Conectado ao servidor AudioSocket em 127.0.0.1:8080
+2025-04-15 23:18:58,452 - __main__ - INFO - ID da chamada: b099a6efcd954dc1abdcee526b1861c9
+2025-04-15 23:18:58,452 - __main__ - INFO - Streaming de áudio iniciado
+2025-04-15 23:18:58,606 - __main__ - INFO - 
+Dispositivos de entrada disponíveis:
+[1] Microfone(Intelbras CAM-1080p)
+[2] Microfone (MacBook Air)
+[4] Microfone do iPhone Daner
+
+2025-04-15 23:18:58,680 - __main__ - INFO - Thread de recebimento de áudio iniciada
+2025-04-15 23:18:58,758 - __main__ - INFO - Captura de áudio iniciada. Falando para o sistema...
+2025-04-15 23:19:44,039 - __main__ - INFO - Thread de recebimento de áudio finalizada
+2025-04-15 23:19:45,924 - __main__ - INFO - Streaming de áudio finalizado
+2025-04-15 23:19:45,925 - __main__ - INFO - Desconectado do servidor AudioSocket
+2025-04-15 23:21:58,418 - __main__ - INFO - Conectado ao servidor AudioSocket em 127.0.0.1:8080
+2025-04-15 23:21:58,418 - __main__ - INFO - ID da chamada: 4bd1cda4ac2643cab92d12af757327c2
+2025-04-15 23:21:58,419 - __main__ - INFO - Streaming de áudio iniciado
+2025-04-15 23:21:58,550 - __main__ - INFO - 
+Dispositivos de entrada disponíveis:
+[1] Microfone(Intelbras CAM-1080p)
+[2] Microfone (MacBook Air)
+[4] Microfone do iPhone Daner
+[5] Microsoft Teams Audio
+
+2025-04-15 23:21:58,619 - __main__ - INFO - Thread de recebimento de áudio iniciada (buffer: 120ms)
+2025-04-15 23:21:58,684 - __main__ - INFO - Captura de áudio iniciada. Falando para o sistema...
+2025-04-15 23:22:01,004 - __main__ - INFO - Buffer inicial preenchido (6 chunks), iniciando reprodução
+2025-04-15 23:22:38,884 - __main__ - INFO - Reproduzindo 0 chunks restantes no buffer
+2025-04-15 23:22:38,997 - __main__ - INFO - Thread de recebimento de áudio finalizada
+2025-04-15 23:22:39,018 - __main__ - INFO - Thread de captura de áudio finalizada
+2025-04-15 23:22:39,018 - __main__ - INFO - Streaming de áudio finalizado
+2025-04-15 23:22:39,019 - __main__ - INFO - Desconectado do servidor AudioSocket
+2025-04-15 23:25:24,611 - __main__ - INFO - Conectado ao servidor AudioSocket em 127.0.0.1:8080
+2025-04-15 23:25:24,612 - __main__ - INFO - ID da chamada: 4e35243d9acb45539c994ee7ad7d0cd7
+2025-04-15 23:25:24,612 - __main__ - INFO - Streaming de áudio iniciado
+2025-04-15 23:25:24,691 - __main__ - INFO - 
+Dispositivos de entrada disponíveis:
+[1] Microfone(Intelbras CAM-1080p)
+[2] Microfone (MacBook Air)
+[4] Microfone do iPhone Daner
+[5] Microsoft Teams Audio
+
+2025-04-15 23:25:24,729 - __main__ - INFO - Thread de recebimento de áudio iniciada (buffer: 120ms)
+2025-04-15 23:25:24,768 - __main__ - INFO - Captura de áudio iniciada. Falando para o sistema...
+2025-04-15 23:25:27,422 - __main__ - INFO - Buffer inicial preenchido (6 chunks), iniciando reprodução
+2025-04-15 23:26:41,142 - __main__ - INFO - Reproduzindo 0 chunks restantes no buffer
+2025-04-15 23:26:41,254 - __main__ - INFO - Thread de recebimento de áudio finalizada
+2025-04-15 23:26:41,258 - __main__ - INFO - Thread de captura de áudio finalizada
+2025-04-15 23:26:41,259 - __main__ - INFO - Streaming de áudio finalizado
+2025-04-15 23:26:41,259 - __main__ - INFO - Desconectado do servidor AudioSocket
+2025-04-15 23:26:45,546 - __main__ - INFO - Conectado ao servidor AudioSocket em 127.0.0.1:8080
+2025-04-15 23:26:45,546 - __main__ - INFO - ID da chamada: 375f0a7f36bb4d72920fce609a54f3ad
+2025-04-15 23:26:45,546 - __main__ - INFO - Streaming de áudio iniciado
+2025-04-15 23:26:45,622 - __main__ - INFO - 
+Dispositivos de entrada disponíveis:
+[1] Microfone(Intelbras CAM-1080p)
+[2] Microfone (MacBook Air)
+[4] Microfone do iPhone Daner
+
+2025-04-15 23:26:45,659 - __main__ - INFO - Thread de recebimento de áudio iniciada (buffer: 120ms)
+2025-04-15 23:26:45,715 - __main__ - INFO - Captura de áudio iniciada. Falando para o sistema...
+2025-04-15 23:26:48,356 - __main__ - INFO - Buffer inicial preenchido (6 chunks), iniciando reprodução
+2025-04-15 23:28:26,588 - __main__ - INFO - Reproduzindo 0 chunks restantes no buffer
+2025-04-15 23:28:26,695 - __main__ - INFO - Thread de recebimento de áudio finalizada
+2025-04-15 23:28:26,712 - __main__ - INFO - Thread de captura de áudio finalizada
+2025-04-15 23:28:26,712 - __main__ - INFO - Streaming de áudio finalizado
+2025-04-15 23:28:26,712 - __main__ - INFO - Desconectado do servidor AudioSocket
