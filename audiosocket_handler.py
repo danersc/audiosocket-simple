@@ -91,126 +91,70 @@ def next_message(conn):
         logger.error(f"Erro ao ler mensagem: {e}")
         return None, None
 
-def enviar_audio_para_cliente(conn, dados_audio):
-    """
-    Envia dados de áudio SLIN para o cliente via AudioSocket.
-    
-    Args:
-        conn: Socket de conexão
-        dados_audio: Bytes de áudio no formato SLIN
-        
-    Returns:
-        True se o áudio foi enviado com sucesso, False caso contrário
-    """
+async def enviar_audio_para_cliente(conn, dados_audio):
     try:
-        # Divide o áudio em chunks de 320 bytes (20ms a 8000Hz)
-        chunk_size = 320  # 8000Hz * 20ms * 2 bytes
+        chunk_size = 320
         for i in range(0, len(dados_audio), chunk_size):
             chunk = dados_audio[i:i+chunk_size]
             if not chunk:
                 continue
-                
-            # Empacota a mensagem no formato AudioSocket
             mensagem_slin = struct.pack('>B H', KIND_SLIN, len(chunk)) + chunk
             conn.sendall(mensagem_slin)
-            time.sleep(0.02)  # 20ms para simular o tempo real de envio
-            
-        logger.info(f"Áudio enviado: {len(dados_audio)} bytes")
+            await asyncio.sleep(0.02)  # await aqui é crucial
+        logger.info(f"Áudio enviado completamente ({len(dados_audio)} bytes)")
         return True
-        
     except Exception as e:
-        logger.error(f"Erro ao enviar áudio para o cliente: {e}")
+        logger.error(f"Erro ao enviar áudio: {e}")
         return False
-        
+
 
 async def processar_audio(conn, frames, state_machine):
-    """
-    Processa o áudio recebido: transcrição, obtenção de resposta da IA e síntese de voz.
-    
-    Args:
-        conn: Socket de conexão
-        frames: Lista de frames de áudio a serem processados
-        state_machine: Máquina de estados
-        
-    Returns:
-        None
-    """
     try:
-        # Atualiza o estado para WAITING (processamento)
+        logger.info("Mudando para estado WAITING para processamento de áudio")
         state_machine.transition_to(State.WAITING)
-        
-        # Concatena os frames de áudio
+
         segmento_audio = b''.join(frames)
-        logger.info(f"Processando {len(segmento_audio)} bytes de áudio")
-        
-        # Transcreve o áudio
         transcricao = transcrever_audio(segmento_audio)
-        
         if not transcricao:
-            logger.warning("Não foi possível transcrever o áudio")
             state_machine.transition_to(State.USER_TURN)
             return
-            
-        logger.info(f"Transcrição: {transcricao}")
-        
-        # Registra a transcrição do usuário no histórico
+
         state_machine.registrar_transcricao_usuario(transcricao)
-        
-        # Obtém resposta da IA
         state_machine.transition_to(State.IA_TURN)
-        
-        # Obtém o ID da conversa para enviar à API
-        conversation_id = state_machine.get_conversation_id()
-        
-        # Envia a transcrição para a API e obtém a resposta
-        resposta = await enviar_mensagem_para_ia(transcricao, conversation_id)
-        
-        # Extrai a mensagem de texto da resposta
+
+        resposta = await enviar_mensagem_para_ia(transcricao, state_machine.get_conversation_id())
         mensagem = extrair_mensagem_da_resposta(resposta)
-        
-        # Registra a resposta da IA no histórico
         state_machine.registrar_transcricao_ia(mensagem, resposta)
-        
+
         if not mensagem:
-            logger.warning("Resposta da IA está vazia")
             state_machine.transition_to(State.USER_TURN)
             return
-            
-        logger.info(f"Resposta da IA: {mensagem}")
-        
-        # Sintetiza a resposta em áudio
+
         dados_audio_slin = sintetizar_fala(mensagem)
-        
         if not dados_audio_slin:
-            logger.warning("Falha na síntese de fala")
             state_machine.transition_to(State.USER_TURN)
             return
-            
-        # Envia o áudio de resposta para o cliente
-        enviado = enviar_audio_para_cliente(conn, dados_audio_slin)
-        
+
+        # Aqui está o ponto crucial:
+        enviado = await enviar_audio_para_cliente(conn, dados_audio_slin)
+
         if not enviado:
-            logger.warning("Falha ao enviar áudio para o cliente")
             state_machine.transition_to(State.USER_TURN)
             return
-            
-        # Obtém o próximo estado da chamada da resposta da IA (se disponível)
+
+        await asyncio.sleep(0.5)  # Pequeno atraso para garantir silêncio absoluto após a IA terminar
+
+        # Agora sim podemos retornar ao USER_TURN
         proximo_estado = obter_estado_chamada(resposta)
-        
         if proximo_estado == "USER_TURN":
             state_machine.transition_to(State.USER_TURN)
         elif proximo_estado == "WAITING":
-            logger.info("API solicitou estado WAITING - aguardando processamento adicional")
-            state_machine.registrar_transcricao_sistema("Processando informações, por favor aguarde...")
             state_machine.transition_to(State.WAITING)
-            # Aqui poderíamos implementar uma verificação periódica do status da chamada
-            # via polling ou webhook, se necessário
         elif proximo_estado == "IA_TURN":
             state_machine.transition_to(State.IA_TURN)
         else:
-            # Comportamento padrão: volta para o turno do usuário
             state_machine.transition_to(State.USER_TURN)
-            
+
     except Exception as e:
         logger.error(f"Erro ao processar áudio: {e}")
         state_machine.transition_to(State.USER_TURN)
@@ -319,14 +263,14 @@ def iniciar_servidor_audiosocket(conn, endereco, state_machine):
                 
             elif kind == KIND_SLIN:
                 # Verifica se está no estado adequado para processamento de áudio do usuário
-                if state_machine.is_standby() or not state_machine.is_user_turn():
-                    # Se não estamos no estado USER_TURN, reiniciamos a detecção de fala
-                    # para evitar problemas quando o estado mudar novamente para USER_TURN
-                    if state_machine.is_waiting() and is_speaking:
-                        logger.info("Estado WAITING: reiniciando detecção de voz")
-                        is_speaking = False
-                        silence_start = None
-                        frames = []
+                # IMPORTANTE: Só processamos áudio quando estamos especificamente no estado USER_TURN
+                # Durante os estados IA_TURN e WAITING, o áudio é completamente ignorado
+                if not state_machine.is_user_turn():
+                    # Reset completo quando não está em USER_TURN
+                    is_speaking = False
+                    silence_start = None
+                    frames = []
+                    buffer_vad = b''  # Limpa completamente o buffer VAD
                     continue
                     
                 # Acumula os dados de áudio SLIN
@@ -355,10 +299,18 @@ def iniciar_servidor_audiosocket(conn, endereco, state_machine):
                                 is_speaking = False
                                 silence_start = None
                                 
-                                # Processa o áudio recebido de forma assíncrona
-                                if frames:
+                                # Verifica novamente se ainda estamos no estado USER_TURN antes de processar
+                                # Isso é uma proteção extra contra mudanças de estado durante a detecção
+                                if frames and state_machine.is_user_turn():
+                                    logger.info(f"Detectado segmento de fala completo, processando {len(frames)} frames")
                                     loop.run_until_complete(processar_audio(conn, frames, state_machine))
                                     frames = []  # Limpa os frames para a próxima interação
+                                else:
+                                    if not frames:
+                                        logger.warning("Detectado silêncio, mas não há frames para processar")
+                                    elif not state_machine.is_user_turn():
+                                        logger.warning(f"Estado mudou para {state_machine.get_state()}, ignorando áudio detectado")
+                                        frames = []  # Limpa os frames já que não estamos mais no estado USER_TURN
                                 
                         else:
                             # Não estamos falando, resetar silence_start

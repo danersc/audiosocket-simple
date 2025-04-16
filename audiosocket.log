@@ -1,844 +1,285 @@
-2025-04-15 23:03:32,414 - __main__ - INFO - Preparando diretórios para arquivos estáticos e templates...
-2025-04-15 23:03:32,414 - __main__ - INFO - Diretórios criados/verificados: /Users/danerdosreis/development/projects/cienciadigital/audiosocket-simple/templates, /Users/danerdosreis/development/projects/cienciadigital/audiosocket-simple/static
-2025-04-15 23:03:32,414 - __main__ - INFO - Iniciando API de debug...
-2025-04-15 23:03:32,414 - state_machine - INFO - Máquina de estados inicializada em State.STANDBY
-2025-04-15 23:03:32,414 - __main__ - INFO - Iniciando servidor AudioSocket...
-2025-04-15 23:03:32,414 - __main__ - INFO - Servidor AudioSocket iniciado em 127.0.0.1:8080
-2025-04-15 23:03:32,414 - __main__ - INFO - Acesse a interface de debug em: http://127.0.0.1:8081
-2025-04-15 23:03:35,295 - __main__ - INFO - Servidor interrompido pelo usuário
-2025-04-15 23:03:35,296 - __main__ - INFO - Servidor encerrado
-2025-04-15 23:03:45,305 - __main__ - INFO - Preparando diretórios para arquivos estáticos e templates...
-2025-04-15 23:03:45,305 - __main__ - INFO - Diretórios criados/verificados: /Users/danerdosreis/development/projects/cienciadigital/audiosocket-simple/templates, /Users/danerdosreis/development/projects/cienciadigital/audiosocket-simple/static
-2025-04-15 23:03:45,305 - __main__ - INFO - Iniciando API de debug...
-2025-04-15 23:03:45,305 - state_machine - INFO - Máquina de estados inicializada em State.STANDBY
-2025-04-15 23:03:45,305 - __main__ - INFO - Iniciando servidor AudioSocket...
-2025-04-15 23:03:45,305 - __main__ - INFO - Servidor AudioSocket iniciado em 127.0.0.1:8080
-2025-04-15 23:03:45,305 - __main__ - INFO - Acesse a interface de debug em: http://127.0.0.1:8081
-2025-04-15 23:03:57,239 - __main__ - INFO - Servidor interrompido pelo usuário
-2025-04-15 23:03:57,241 - __main__ - INFO - Servidor encerrado
-2025-04-15 23:03:58,944 - __main__ - INFO - Preparando diretórios para arquivos estáticos e templates...
-2025-04-15 23:03:58,944 - __main__ - INFO - Diretórios criados/verificados: /Users/danerdosreis/development/projects/cienciadigital/audiosocket-simple/templates, /Users/danerdosreis/development/projects/cienciadigital/audiosocket-simple/static
-2025-04-15 23:03:58,944 - __main__ - INFO - Iniciando API de debug...
-2025-04-15 23:03:58,944 - state_machine - INFO - Máquina de estados inicializada em State.STANDBY
-2025-04-15 23:03:58,944 - __main__ - INFO - Iniciando servidor AudioSocket...
-2025-04-15 23:04:05,740 - __main__ - INFO - Nova conexão de 127.0.0.1:63410
-2025-04-15 23:04:05,741 - state_machine - INFO - Conversa None finalizada
-2025-04-15 23:04:05,741 - audiosocket_handler - INFO - Iniciando servidor AudioSocket para cliente ('127.0.0.1', 63410)
-2025-04-15 23:04:05,743 - audiosocket_handler - INFO - Áudio de espera carregado: 986610 bytes
-2025-04-15 23:04:05,744 - audiosocket_handler - INFO - Recebido Call ID: 5586f0e985e043f3a3720fc486c7e740
-2025-04-15 23:04:05,744 - state_machine - INFO - Nova conversa iniciada com ID: 54378e32-b7f9-4e88-960a-e65861bfb150
-2025-04-15 23:04:05,744 - audiosocket_handler - INFO - Iniciando reprodução do áudio de espera em loop
-2025-04-15 23:04:05,744 - audiosocket_handler - INFO - Thread de áudio de espera iniciada
-2025-04-15 23:04:07,746 - audiosocket_handler - INFO - Enviando saudação: 'Condomínio Apoena, em que posso ajudar?'
-2025-04-15 23:04:12,430 - audiosocket_handler - INFO - Áudio enviado: 52400 bytes
-2025-04-15 23:04:12,431 - state_machine - INFO - Mensagem do sistema registrada: Condomínio Apoena, em que posso ajudar?
-2025-04-15 23:04:12,431 - state_machine - INFO - Transição de estado: State.STANDBY -> State.USER_TURN
-2025-04-15 23:04:12,432 - audiosocket_handler - INFO - Saudação enviada, ativando turno do usuário
-2025-04-15 23:04:12,432 - audiosocket_handler - INFO - Saudação agendada e executada com sucesso
-2025-04-15 23:04:12,433 - audiosocket_handler - INFO - Detecção de voz iniciada
-2025-04-15 23:04:17,667 - audiosocket_handler - INFO - Silêncio detectado por 2.0 segundos. Processando áudio.
-2025-04-15 23:04:17,668 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.WAITING
-2025-04-15 23:04:17,669 - audiosocket_handler - INFO - Processando 129920 bytes de áudio
-2025-04-15 23:04:17,730 - audiosocket_handler - INFO - Reproduzindo áudio de espera
-2025-04-15 23:04:20,913 - speech_service - INFO - Transcrição: Condomínio, a pureza em que posso ajudar. Boa noite. Eu tenho uma entrega para fazer no apartamento 501 aos cuidados de Renata.
-2025-04-15 23:04:20,973 - audiosocket_handler - INFO - Transcrição: Condomínio, a pureza em que posso ajudar. Boa noite. Eu tenho uma entrega para fazer no apartamento 501 aos cuidados de Renata.
-2025-04-15 23:04:20,973 - state_machine - INFO - Transcrição do usuário registrada: Condomínio, a pureza em que posso ajudar. Boa noite. Eu tenho uma entrega para fazer no apartamento 501 aos cuidados de Renata.
-2025-04-15 23:04:20,974 - state_machine - INFO - Transição de estado: State.WAITING -> State.IA_TURN
-2025-04-15 23:04:20,974 - ai_service - INFO - Enviando solicitação para API em: http://127.0.0.1:8000/messages
-2025-04-15 23:04:21,022 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages "HTTP/1.1 307 Temporary Redirect"
-2025-04-15 23:04:25,133 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages/ "HTTP/1.1 200 OK"
-2025-04-15 23:04:25,133 - ai_service - INFO - Resposta da IA recebida: Entrega confirmada para Renata no apartamento 501. Notificarei o morador.
-2025-04-15 23:04:25,134 - state_machine - INFO - Resposta da IA registrada: Entrega confirmada para Renata no apartamento 501. Notificarei o morador.
-2025-04-15 23:04:25,134 - audiosocket_handler - INFO - Resposta da IA: Entrega confirmada para Renata no apartamento 501. Notificarei o morador.
-2025-04-15 23:04:29,545 - audiosocket_handler - ERROR - Erro ao enviar áudio para o cliente: [Errno 32] Broken pipe
-2025-04-15 23:04:29,546 - audiosocket_handler - ERROR - Erro ao enviar áudio para o cliente: [Errno 32] Broken pipe
-2025-04-15 23:04:29,546 - audiosocket_handler - WARNING - Falha ao enviar áudio para o cliente
-2025-04-15 23:04:29,546 - state_machine - INFO - Transição de estado: State.IA_TURN -> State.USER_TURN
-2025-04-15 23:04:29,546 - audiosocket_handler - INFO - Detecção de voz iniciada
-2025-04-15 23:04:29,549 - audiosocket_handler - INFO - Recebido mensagem de Hangup
-2025-04-15 23:04:29,550 - state_machine - INFO - Conversa 54378e32-b7f9-4e88-960a-e65861bfb150 finalizada
-2025-04-15 23:04:29,550 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.STANDBY
-2025-04-15 23:04:29,750 - audiosocket_handler - INFO - Thread de áudio de espera encerrada
-2025-04-15 23:04:29,750 - audiosocket_handler - INFO - Thread de áudio de espera encerrada
-2025-04-15 23:04:29,751 - state_machine - INFO - Conversa None finalizada
-2025-04-15 23:04:29,751 - audiosocket_handler - INFO - Conexão com cliente ('127.0.0.1', 63410) fechada
-2025-04-15 23:05:28,638 - __main__ - INFO - Servidor interrompido pelo usuário
-2025-04-15 23:05:28,644 - __main__ - INFO - Servidor encerrado
-2025-04-15 23:05:33,601 - __main__ - INFO - Preparando diretórios para arquivos estáticos e templates...
-2025-04-15 23:05:33,601 - __main__ - INFO - Diretórios criados/verificados: /Users/danerdosreis/development/projects/cienciadigital/audiosocket-simple/templates, /Users/danerdosreis/development/projects/cienciadigital/audiosocket-simple/static
-2025-04-15 23:05:33,601 - __main__ - INFO - Iniciando API de debug...
-2025-04-15 23:05:33,601 - state_machine - INFO - Máquina de estados inicializada em State.STANDBY
-2025-04-15 23:05:33,601 - __main__ - INFO - Iniciando servidor AudioSocket...
-2025-04-15 23:05:35,532 - __main__ - INFO - Nova conexão de 127.0.0.1:63953
-2025-04-15 23:05:35,532 - state_machine - INFO - Conversa None finalizada
-2025-04-15 23:05:35,533 - audiosocket_handler - INFO - Iniciando servidor AudioSocket para cliente ('127.0.0.1', 63953)
-2025-04-15 23:05:35,533 - audiosocket_handler - INFO - Recebido Call ID: c56a9ed723194ee48e0df003029955e1
-2025-04-15 23:05:35,533 - state_machine - INFO - Nova conversa iniciada com ID: 54034bf2-4dfa-4cf1-8eaa-a32a23383d31
-2025-04-15 23:05:37,536 - audiosocket_handler - INFO - Enviando saudação: 'Condomínio Apoena, em que posso ajudar?'
-2025-04-15 23:05:38,198 - audiosocket_handler - ERROR - Erro ao enviar áudio para o cliente: [Errno 32] Broken pipe
-2025-04-15 23:05:38,198 - state_machine - INFO - Mensagem do sistema registrada: Condomínio Apoena, em que posso ajudar?
-2025-04-15 23:05:38,198 - state_machine - INFO - Transição de estado: State.STANDBY -> State.USER_TURN
-2025-04-15 23:05:38,198 - audiosocket_handler - INFO - Saudação enviada, ativando turno do usuário
-2025-04-15 23:05:38,199 - audiosocket_handler - INFO - Saudação agendada e executada com sucesso
-2025-04-15 23:05:38,199 - audiosocket_handler - ERROR - Erro ao ler mensagem: [Errno 54] Connection reset by peer
-2025-04-15 23:05:38,199 - audiosocket_handler - INFO - Conexão fechada pelo cliente
-2025-04-15 23:05:38,199 - state_machine - INFO - Conversa 54034bf2-4dfa-4cf1-8eaa-a32a23383d31 finalizada
-2025-04-15 23:05:38,199 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.STANDBY
-2025-04-15 23:05:38,200 - audiosocket_handler - INFO - Conexão com cliente ('127.0.0.1', 63953) fechada
-2025-04-15 23:05:41,759 - __main__ - INFO - Nova conexão de 127.0.0.1:63992
-2025-04-15 23:05:41,760 - state_machine - INFO - Conversa None finalizada
-2025-04-15 23:05:41,760 - audiosocket_handler - INFO - Iniciando servidor AudioSocket para cliente ('127.0.0.1', 63992)
-2025-04-15 23:05:41,760 - audiosocket_handler - INFO - Recebido Call ID: ff2c79c8bca24ea7871c2a43d55b78d0
-2025-04-15 23:05:41,760 - state_machine - INFO - Nova conversa iniciada com ID: ebec0baa-4851-4008-bb6b-48d19a8dcdfd
-2025-04-15 23:05:43,761 - audiosocket_handler - INFO - Enviando saudação: 'Condomínio Apoena, em que posso ajudar?'
-2025-04-15 23:05:48,062 - audiosocket_handler - INFO - Áudio enviado: 52400 bytes
-2025-04-15 23:05:48,062 - state_machine - INFO - Mensagem do sistema registrada: Condomínio Apoena, em que posso ajudar?
-2025-04-15 23:05:48,062 - state_machine - INFO - Transição de estado: State.STANDBY -> State.USER_TURN
-2025-04-15 23:05:48,062 - audiosocket_handler - INFO - Saudação enviada, ativando turno do usuário
-2025-04-15 23:05:48,063 - audiosocket_handler - INFO - Saudação agendada e executada com sucesso
-2025-04-15 23:05:48,063 - audiosocket_handler - INFO - Detecção de voz iniciada
-2025-04-15 23:05:50,074 - audiosocket_handler - INFO - Silêncio detectado por 2.0 segundos. Processando áudio.
-2025-04-15 23:05:50,074 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.WAITING
-2025-04-15 23:05:50,075 - audiosocket_handler - INFO - Processando 74240 bytes de áudio
-2025-04-15 23:05:52,086 - speech_service - INFO - Transcrição: Condomínio a poena em que posso ajudar. Boa noite. Eu tenho uma entrega.
-2025-04-15 23:05:52,147 - audiosocket_handler - INFO - Transcrição: Condomínio a poena em que posso ajudar. Boa noite. Eu tenho uma entrega.
-2025-04-15 23:05:52,147 - state_machine - INFO - Transcrição do usuário registrada: Condomínio a poena em que posso ajudar. Boa noite. Eu tenho uma entrega.
-2025-04-15 23:05:52,147 - state_machine - INFO - Transição de estado: State.WAITING -> State.IA_TURN
-2025-04-15 23:05:52,147 - ai_service - INFO - Enviando solicitação para API em: http://127.0.0.1:8000/messages
-2025-04-15 23:05:52,193 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages "HTTP/1.1 307 Temporary Redirect"
-2025-04-15 23:05:54,083 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages/ "HTTP/1.1 200 OK"
-2025-04-15 23:05:54,084 - ai_service - INFO - Resposta da IA recebida: Por favor, me informe o seu nome e o número do apartamento onde a entrega deve ser feita.
-2025-04-15 23:05:54,084 - state_machine - INFO - Resposta da IA registrada: Por favor, me informe o seu nome e o número do apartamento onde a entrega deve ser feita.
-2025-04-15 23:05:54,084 - audiosocket_handler - INFO - Resposta da IA: Por favor, me informe o seu nome e o número do apartamento onde a entrega deve ser feita.
-2025-04-15 23:06:01,538 - audiosocket_handler - INFO - Áudio enviado: 92000 bytes
-2025-04-15 23:06:01,538 - state_machine - INFO - Transição de estado: State.IA_TURN -> State.USER_TURN
-2025-04-15 23:06:01,541 - audiosocket_handler - INFO - Detecção de voz iniciada
-2025-04-15 23:06:05,495 - audiosocket_handler - INFO - Silêncio detectado por 2.0 segundos. Processando áudio.
-2025-04-15 23:06:05,496 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.WAITING
-2025-04-15 23:06:05,496 - audiosocket_handler - INFO - Processando 149120 bytes de áudio
-2025-04-15 23:06:09,071 - speech_service - INFO - Transcrição: Por favor, me informe o seu nome e o número do apartamento onde A Entrega deve ser feita. Meu nome é danner. A Entrega vai ser feita no apartamento 501.
-2025-04-15 23:06:09,176 - audiosocket_handler - INFO - Transcrição: Por favor, me informe o seu nome e o número do apartamento onde A Entrega deve ser feita. Meu nome é danner. A Entrega vai ser feita no apartamento 501.
-2025-04-15 23:06:09,176 - state_machine - INFO - Transcrição do usuário registrada: Por favor, me informe o seu nome e o número do apartamento onde A Entrega deve ser feita. Meu nome é danner. A Entrega vai ser feita no apartamento 501.
-2025-04-15 23:06:09,176 - state_machine - INFO - Transição de estado: State.WAITING -> State.IA_TURN
-2025-04-15 23:06:09,176 - ai_service - INFO - Enviando solicitação para API em: http://127.0.0.1:8000/messages
-2025-04-15 23:06:09,213 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages "HTTP/1.1 307 Temporary Redirect"
-2025-04-15 23:06:10,833 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages/ "HTTP/1.1 200 OK"
-2025-04-15 23:06:10,833 - ai_service - INFO - Resposta da IA recebida: Por favor, me informe o nome do morador que vai receber a entrega.
-2025-04-15 23:06:10,833 - state_machine - INFO - Resposta da IA registrada: Por favor, me informe o nome do morador que vai receber a entrega.
-2025-04-15 23:06:10,833 - audiosocket_handler - INFO - Resposta da IA: Por favor, me informe o nome do morador que vai receber a entrega.
-2025-04-15 23:06:16,726 - audiosocket_handler - INFO - Áudio enviado: 72400 bytes
-2025-04-15 23:06:16,726 - state_machine - INFO - Transição de estado: State.IA_TURN -> State.USER_TURN
-2025-04-15 23:06:16,727 - audiosocket_handler - INFO - Detecção de voz iniciada
-2025-04-15 23:06:18,730 - audiosocket_handler - INFO - Silêncio detectado por 2.0 segundos. Processando áudio.
-2025-04-15 23:06:18,731 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.WAITING
-2025-04-15 23:06:18,731 - audiosocket_handler - INFO - Processando 114560 bytes de áudio
-2025-04-15 23:06:21,504 - speech_service - INFO - Transcrição: Para Arthur Oliveira, por favor, me informe o nome do morador que vai receber A Entrega, Arthur Oliveira.
-2025-04-15 23:06:21,566 - audiosocket_handler - INFO - Transcrição: Para Arthur Oliveira, por favor, me informe o nome do morador que vai receber A Entrega, Arthur Oliveira.
-2025-04-15 23:06:21,566 - state_machine - INFO - Transcrição do usuário registrada: Para Arthur Oliveira, por favor, me informe o nome do morador que vai receber A Entrega, Arthur Oliveira.
-2025-04-15 23:06:21,567 - state_machine - INFO - Transição de estado: State.WAITING -> State.IA_TURN
-2025-04-15 23:06:21,567 - ai_service - INFO - Enviando solicitação para API em: http://127.0.0.1:8000/messages
-2025-04-15 23:06:21,606 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages "HTTP/1.1 307 Temporary Redirect"
-2025-04-15 23:06:23,377 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages/ "HTTP/1.1 200 OK"
-2025-04-15 23:06:23,377 - ai_service - INFO - Resposta da IA recebida: Entrega confirmada para Arthur Oliveira no apartamento 501. Notificarei o morador.
-2025-04-15 23:06:23,377 - state_machine - INFO - Resposta da IA registrada: Entrega confirmada para Arthur Oliveira no apartamento 501. Notificarei o morador.
-2025-04-15 23:06:23,377 - audiosocket_handler - INFO - Resposta da IA: Entrega confirmada para Arthur Oliveira no apartamento 501. Notificarei o morador.
-2025-04-15 23:06:32,071 - audiosocket_handler - INFO - Áudio enviado: 110400 bytes
-2025-04-15 23:06:32,072 - state_machine - INFO - Transição de estado: State.IA_TURN -> State.USER_TURN
-2025-04-15 23:06:32,075 - audiosocket_handler - INFO - Detecção de voz iniciada
-2025-04-15 23:06:34,093 - audiosocket_handler - INFO - Silêncio detectado por 2.0 segundos. Processando áudio.
-2025-04-15 23:06:34,094 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.WAITING
-2025-04-15 23:06:34,094 - audiosocket_handler - INFO - Processando 96640 bytes de áudio
-2025-04-15 23:06:36,475 - speech_service - INFO - Transcrição: Entrega confirmada para Arthur Oliveira no apartamento 501 notificaria o morador.
-2025-04-15 23:06:36,534 - audiosocket_handler - INFO - Transcrição: Entrega confirmada para Arthur Oliveira no apartamento 501 notificaria o morador.
-2025-04-15 23:06:36,534 - state_machine - INFO - Transcrição do usuário registrada: Entrega confirmada para Arthur Oliveira no apartamento 501 notificaria o morador.
-2025-04-15 23:06:36,534 - state_machine - INFO - Transição de estado: State.WAITING -> State.IA_TURN
-2025-04-15 23:06:36,534 - ai_service - INFO - Enviando solicitação para API em: http://127.0.0.1:8000/messages
-2025-04-15 23:06:36,577 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages "HTTP/1.1 307 Temporary Redirect"
-2025-04-15 23:06:39,775 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages/ "HTTP/1.1 200 OK"
-2025-04-15 23:06:39,776 - ai_service - INFO - Resposta da IA recebida: Entrega confirmada para Arthur Oliveira no apartamento 501. Notificarei o morador.
-2025-04-15 23:06:39,776 - state_machine - INFO - Resposta da IA registrada: Entrega confirmada para Arthur Oliveira no apartamento 501. Notificarei o morador.
-2025-04-15 23:06:39,776 - audiosocket_handler - INFO - Resposta da IA: Entrega confirmada para Arthur Oliveira no apartamento 501. Notificarei o morador.
-2025-04-15 23:06:41,630 - audiosocket_handler - ERROR - Erro ao enviar áudio para o cliente: [Errno 32] Broken pipe
-2025-04-15 23:06:41,632 - audiosocket_handler - WARNING - Falha ao enviar áudio para o cliente
-2025-04-15 23:06:41,633 - state_machine - INFO - Transição de estado: State.IA_TURN -> State.USER_TURN
-2025-04-15 23:06:41,635 - audiosocket_handler - INFO - Detecção de voz iniciada
-2025-04-15 23:06:41,638 - audiosocket_handler - INFO - Recebido mensagem de Hangup
-2025-04-15 23:06:41,638 - state_machine - INFO - Conversa ebec0baa-4851-4008-bb6b-48d19a8dcdfd finalizada
-2025-04-15 23:06:41,638 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.STANDBY
-2025-04-15 23:06:41,638 - state_machine - INFO - Conversa None finalizada
-2025-04-15 23:06:41,638 - audiosocket_handler - INFO - Conexão com cliente ('127.0.0.1', 63992) fechada
-2025-04-15 23:10:56,789 - __main__ - INFO - Nova conexão de 127.0.0.1:49484
-2025-04-15 23:10:56,790 - state_machine - INFO - Conversa None finalizada
-2025-04-15 23:10:56,790 - audiosocket_handler - INFO - Iniciando servidor AudioSocket para cliente ('127.0.0.1', 49484)
-2025-04-15 23:10:56,792 - audiosocket_handler - INFO - Recebido Call ID: bde63d0994614d75b1544ab54ef4d934
-2025-04-15 23:10:56,792 - state_machine - INFO - Nova conversa iniciada com ID: 826e0ee8-5162-4f58-b791-62fb10ba94c2
-2025-04-15 23:10:58,793 - audiosocket_handler - INFO - Enviando saudação: 'Condomínio Apoena, em que posso ajudar?'
-2025-04-15 23:11:02,092 - audiosocket_handler - ERROR - Erro ao enviar áudio para o cliente: [Errno 32] Broken pipe
-2025-04-15 23:11:02,093 - state_machine - INFO - Mensagem do sistema registrada: Condomínio Apoena, em que posso ajudar?
-2025-04-15 23:11:02,093 - state_machine - INFO - Transição de estado: State.STANDBY -> State.USER_TURN
-2025-04-15 23:11:02,093 - audiosocket_handler - INFO - Saudação enviada, ativando turno do usuário
-2025-04-15 23:11:02,093 - audiosocket_handler - INFO - Saudação agendada e executada com sucesso
-2025-04-15 23:11:02,093 - audiosocket_handler - INFO - Detecção de voz iniciada
-2025-04-15 23:11:02,095 - audiosocket_handler - INFO - Recebido mensagem de Hangup
-2025-04-15 23:11:02,095 - state_machine - INFO - Conversa 826e0ee8-5162-4f58-b791-62fb10ba94c2 finalizada
-2025-04-15 23:11:02,095 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.STANDBY
-2025-04-15 23:11:02,095 - state_machine - INFO - Conversa None finalizada
-2025-04-15 23:11:02,095 - audiosocket_handler - INFO - Conexão com cliente ('127.0.0.1', 49484) fechada
-2025-04-15 23:11:04,787 - __main__ - INFO - Servidor interrompido pelo usuário
-2025-04-15 23:11:04,787 - __main__ - INFO - Servidor encerrado
-2025-04-15 23:11:06,884 - __main__ - INFO - Preparando diretórios para arquivos estáticos e templates...
-2025-04-15 23:11:06,884 - __main__ - INFO - Diretórios criados/verificados: /Users/danerdosreis/development/projects/cienciadigital/audiosocket-simple/templates, /Users/danerdosreis/development/projects/cienciadigital/audiosocket-simple/static
-2025-04-15 23:11:06,884 - __main__ - INFO - Iniciando API de debug...
-2025-04-15 23:11:06,884 - state_machine - INFO - Máquina de estados inicializada em State.STANDBY
-2025-04-15 23:11:06,884 - __main__ - INFO - Iniciando servidor AudioSocket...
-2025-04-15 23:11:10,029 - __main__ - INFO - Nova conexão de 127.0.0.1:49561
-2025-04-15 23:11:10,029 - state_machine - INFO - Conversa None finalizada
-2025-04-15 23:11:10,030 - audiosocket_handler - INFO - Iniciando servidor AudioSocket para cliente ('127.0.0.1', 49561)
-2025-04-15 23:11:10,030 - audiosocket_handler - INFO - Recebido Call ID: bead10651ede46828a6dd9b9f752e104
-2025-04-15 23:11:10,030 - state_machine - INFO - Nova conversa iniciada com ID: dba5ee40-1391-4d7c-a0f1-42093ba7657f
-2025-04-15 23:11:12,032 - audiosocket_handler - INFO - Enviando saudação: 'Condomínio Apoena, em que posso ajudar?'
-2025-04-15 23:11:12,355 - speech_service - WARNING - Erro na síntese de fala: ResultReason.Canceled
-2025-04-15 23:11:12,355 - audiosocket_handler - ERROR - Falha ao sintetizar saudação
-2025-04-15 23:11:12,356 - audiosocket_handler - INFO - Saudação agendada e executada com sucesso
-2025-04-15 23:11:24,331 - audiosocket_handler - INFO - Recebido mensagem de Hangup
-2025-04-15 23:11:24,332 - state_machine - INFO - Conversa dba5ee40-1391-4d7c-a0f1-42093ba7657f finalizada
-2025-04-15 23:11:24,333 - state_machine - INFO - Conversa None finalizada
-2025-04-15 23:11:24,333 - audiosocket_handler - INFO - Conexão com cliente ('127.0.0.1', 49561) fechada
-2025-04-15 23:12:24,599 - __main__ - INFO - Servidor interrompido pelo usuário
-2025-04-15 23:12:24,601 - __main__ - INFO - Servidor encerrado
-2025-04-15 23:12:26,107 - __main__ - INFO - Preparando diretórios para arquivos estáticos e templates...
-2025-04-15 23:12:26,107 - __main__ - INFO - Diretórios criados/verificados: /Users/danerdosreis/development/projects/cienciadigital/audiosocket-simple/templates, /Users/danerdosreis/development/projects/cienciadigital/audiosocket-simple/static
-2025-04-15 23:12:26,107 - __main__ - INFO - Iniciando API de debug...
-2025-04-15 23:12:26,107 - state_machine - INFO - Máquina de estados inicializada em State.STANDBY
-2025-04-15 23:12:26,108 - __main__ - INFO - Iniciando servidor AudioSocket...
-2025-04-15 23:12:30,083 - __main__ - INFO - Nova conexão de 127.0.0.1:50039
-2025-04-15 23:12:30,083 - state_machine - INFO - Conversa None finalizada
-2025-04-15 23:12:30,083 - audiosocket_handler - INFO - Iniciando servidor AudioSocket para cliente ('127.0.0.1', 50039)
-2025-04-15 23:12:30,083 - audiosocket_handler - INFO - Recebido Call ID: d6d920a35fd841babec7b87854703930
-2025-04-15 23:12:30,083 - state_machine - INFO - Nova conversa iniciada com ID: bb029337-d009-4e24-a15a-42b368d7ad66
-2025-04-15 23:12:32,085 - audiosocket_handler - INFO - Enviando saudação: 'Condomínio Apoena, em que posso ajudar?'
-2025-04-15 23:12:36,763 - audiosocket_handler - INFO - Áudio enviado: 48200 bytes
-2025-04-15 23:12:36,764 - state_machine - INFO - Mensagem do sistema registrada: Condomínio Apoena, em que posso ajudar?
-2025-04-15 23:12:36,764 - state_machine - INFO - Transição de estado: State.STANDBY -> State.USER_TURN
-2025-04-15 23:12:36,764 - audiosocket_handler - INFO - Saudação enviada, ativando turno do usuário
-2025-04-15 23:12:36,764 - audiosocket_handler - INFO - Saudação agendada e executada com sucesso
-2025-04-15 23:12:36,765 - audiosocket_handler - INFO - Detecção de voz iniciada
-2025-04-15 23:12:38,767 - audiosocket_handler - INFO - Silêncio detectado por 2.0 segundos. Processando áudio.
-2025-04-15 23:12:38,767 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.WAITING
-2025-04-15 23:12:38,768 - audiosocket_handler - INFO - Processando 47360 bytes de áudio
-2025-04-15 23:12:40,258 - speech_service - INFO - Transcrição: Condomínio a purena em que posso ajudar?
-2025-04-15 23:12:40,322 - audiosocket_handler - INFO - Transcrição: Condomínio a purena em que posso ajudar?
-2025-04-15 23:12:40,322 - state_machine - INFO - Transcrição do usuário registrada: Condomínio a purena em que posso ajudar?
-2025-04-15 23:12:40,322 - state_machine - INFO - Transição de estado: State.WAITING -> State.IA_TURN
-2025-04-15 23:12:40,323 - ai_service - INFO - Enviando solicitação para API em: http://127.0.0.1:8000/messages
-2025-04-15 23:12:40,383 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages "HTTP/1.1 307 Temporary Redirect"
-2025-04-15 23:12:42,820 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages/ "HTTP/1.1 200 OK"
-2025-04-15 23:12:42,821 - ai_service - INFO - Resposta da IA recebida: Por favor, me informe sua intenção
-2025-04-15 23:12:42,822 - state_machine - INFO - Resposta da IA registrada: Por favor, me informe sua intenção
-2025-04-15 23:12:42,823 - audiosocket_handler - INFO - Resposta da IA: Por favor, me informe sua intenção
-2025-04-15 23:12:44,386 - audiosocket_handler - ERROR - Erro ao enviar áudio para o cliente: [Errno 32] Broken pipe
-2025-04-15 23:12:44,386 - audiosocket_handler - WARNING - Falha ao enviar áudio para o cliente
-2025-04-15 23:12:44,386 - state_machine - INFO - Transição de estado: State.IA_TURN -> State.USER_TURN
-2025-04-15 23:12:44,387 - audiosocket_handler - INFO - Detecção de voz iniciada
-2025-04-15 23:12:44,387 - audiosocket_handler - INFO - Recebido mensagem de Hangup
-2025-04-15 23:12:44,387 - state_machine - INFO - Conversa bb029337-d009-4e24-a15a-42b368d7ad66 finalizada
-2025-04-15 23:12:44,387 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.STANDBY
-2025-04-15 23:12:44,387 - state_machine - INFO - Conversa None finalizada
-2025-04-15 23:12:44,387 - audiosocket_handler - INFO - Conexão com cliente ('127.0.0.1', 50039) fechada
-2025-04-15 23:17:21,794 - __main__ - INFO - Servidor interrompido pelo usuário
-2025-04-15 23:17:21,800 - __main__ - INFO - Servidor encerrado
-2025-04-15 23:17:23,707 - __main__ - INFO - Preparando diretórios para arquivos estáticos e templates...
-2025-04-15 23:17:23,708 - __main__ - INFO - Diretórios criados/verificados: /Users/danerdosreis/development/projects/cienciadigital/audiosocket-simple/templates, /Users/danerdosreis/development/projects/cienciadigital/audiosocket-simple/static
-2025-04-15 23:17:23,708 - __main__ - INFO - Iniciando API de debug...
-2025-04-15 23:17:23,708 - state_machine - INFO - Máquina de estados inicializada em State.STANDBY
-2025-04-15 23:17:23,708 - __main__ - INFO - Iniciando servidor AudioSocket...
-2025-04-15 23:18:58,453 - __main__ - INFO - Nova conexão de 127.0.0.1:52302
-2025-04-15 23:18:58,453 - state_machine - INFO - Conversa None finalizada
-2025-04-15 23:18:58,453 - audiosocket_handler - INFO - Iniciando servidor AudioSocket para cliente ('127.0.0.1', 52302)
-2025-04-15 23:18:58,454 - audiosocket_handler - INFO - Recebido Call ID: b099a6efcd954dc1abdcee526b1861c9
-2025-04-15 23:18:58,454 - state_machine - INFO - Nova conversa iniciada com ID: 2c49856e-0e74-440f-9aa5-3b8eab51ac0d
-2025-04-15 23:19:00,455 - audiosocket_handler - INFO - Enviando saudação: 'Condomínio Apoena, em que posso ajudar?'
-2025-04-15 23:19:04,882 - audiosocket_handler - INFO - Áudio enviado: 48200 bytes
-2025-04-15 23:19:04,883 - state_machine - INFO - Mensagem do sistema registrada: Condomínio Apoena, em que posso ajudar?
-2025-04-15 23:19:04,883 - state_machine - INFO - Transição de estado: State.STANDBY -> State.USER_TURN
-2025-04-15 23:19:04,883 - audiosocket_handler - INFO - Saudação enviada, ativando turno do usuário
-2025-04-15 23:19:04,883 - audiosocket_handler - INFO - Saudação agendada e executada com sucesso
-2025-04-15 23:19:04,883 - audiosocket_handler - INFO - Detecção de voz iniciada
-2025-04-15 23:19:06,888 - audiosocket_handler - INFO - Silêncio detectado por 2.0 segundos. Processando áudio.
-2025-04-15 23:19:06,889 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.WAITING
-2025-04-15 23:19:06,889 - audiosocket_handler - INFO - Processando 100160 bytes de áudio
-2025-04-15 23:19:09,401 - speech_service - INFO - Transcrição: Condomínio a poema em que posso ajudar? Boa noite. Eu quero fazer uma entrega.
-2025-04-15 23:19:09,462 - audiosocket_handler - INFO - Transcrição: Condomínio a poema em que posso ajudar? Boa noite. Eu quero fazer uma entrega.
-2025-04-15 23:19:09,462 - state_machine - INFO - Transcrição do usuário registrada: Condomínio a poema em que posso ajudar? Boa noite. Eu quero fazer uma entrega.
-2025-04-15 23:19:09,462 - state_machine - INFO - Transição de estado: State.WAITING -> State.IA_TURN
-2025-04-15 23:19:09,463 - state_machine - INFO - Saindo do estado WAITING
-2025-04-15 23:19:09,463 - state_machine - INFO - Mensagem do sistema registrada: Estado alterado: WAITING -> IA_TURN
-2025-04-15 23:19:09,463 - ai_service - INFO - Enviando solicitação para API em: http://127.0.0.1:8000/messages
-2025-04-15 23:19:09,517 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages "HTTP/1.1 307 Temporary Redirect"
-2025-04-15 23:19:11,194 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages/ "HTTP/1.1 200 OK"
-2025-04-15 23:19:11,194 - ai_service - INFO - Resposta da IA recebida: Por favor, me informe o nome do morador que vai receber a entrega.
-2025-04-15 23:19:11,195 - state_machine - INFO - Resposta da IA registrada: Por favor, me informe o nome do morador que vai receber a entrega.
-2025-04-15 23:19:11,195 - audiosocket_handler - INFO - Resposta da IA: Por favor, me informe o nome do morador que vai receber a entrega.
-2025-04-15 23:19:17,351 - audiosocket_handler - INFO - Áudio enviado: 65800 bytes
-2025-04-15 23:19:17,351 - state_machine - INFO - Transição de estado: State.IA_TURN -> State.USER_TURN
-2025-04-15 23:19:17,354 - audiosocket_handler - INFO - Detecção de voz iniciada
-2025-04-15 23:19:21,549 - audiosocket_handler - INFO - Silêncio detectado por 2.0 segundos. Processando áudio.
-2025-04-15 23:19:21,550 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.WAITING
-2025-04-15 23:19:21,550 - audiosocket_handler - INFO - Processando 122560 bytes de áudio
-2025-04-15 23:19:24,566 - speech_service - INFO - Transcrição: Por favor, me informe o nome do morador que vai receber A Entrega. A Entrega é para Renata Oliveira, no apartamento 501.
-2025-04-15 23:19:24,614 - audiosocket_handler - INFO - Transcrição: Por favor, me informe o nome do morador que vai receber A Entrega. A Entrega é para Renata Oliveira, no apartamento 501.
-2025-04-15 23:19:24,615 - state_machine - INFO - Transcrição do usuário registrada: Por favor, me informe o nome do morador que vai receber A Entrega. A Entrega é para Renata Oliveira, no apartamento 501.
-2025-04-15 23:19:24,615 - state_machine - INFO - Transição de estado: State.WAITING -> State.IA_TURN
-2025-04-15 23:19:24,615 - state_machine - INFO - Saindo do estado WAITING
-2025-04-15 23:19:24,615 - state_machine - INFO - Mensagem do sistema registrada: Estado alterado: WAITING -> IA_TURN
-2025-04-15 23:19:24,615 - ai_service - INFO - Enviando solicitação para API em: http://127.0.0.1:8000/messages
-2025-04-15 23:19:24,651 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages "HTTP/1.1 307 Temporary Redirect"
-2025-04-15 23:19:26,392 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages/ "HTTP/1.1 200 OK"
-2025-04-15 23:19:26,394 - ai_service - INFO - Resposta da IA recebida: Entrega confirmada para Renata Oliveira no apartamento 501. Notificarei o morador.
-2025-04-15 23:19:26,394 - state_machine - INFO - Resposta da IA registrada: Entrega confirmada para Renata Oliveira no apartamento 501. Notificarei o morador.
-2025-04-15 23:19:26,394 - audiosocket_handler - INFO - Resposta da IA: Entrega confirmada para Renata Oliveira no apartamento 501. Notificarei o morador.
-2025-04-15 23:19:35,911 - audiosocket_handler - INFO - Áudio enviado: 106800 bytes
-2025-04-15 23:19:35,913 - state_machine - INFO - Transição de estado: State.IA_TURN -> State.USER_TURN
-2025-04-15 23:19:35,914 - audiosocket_handler - INFO - Detecção de voz iniciada
-2025-04-15 23:19:37,925 - audiosocket_handler - INFO - Silêncio detectado por 2.0 segundos. Processando áudio.
-2025-04-15 23:19:37,927 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.WAITING
-2025-04-15 23:19:37,927 - audiosocket_handler - INFO - Processando 111040 bytes de áudio
-2025-04-15 23:19:40,665 - speech_service - INFO - Transcrição: Entrega confirmada para Renato Oliveira no apartamento 501 notificarei o morador.
-2025-04-15 23:19:40,723 - audiosocket_handler - INFO - Transcrição: Entrega confirmada para Renato Oliveira no apartamento 501 notificarei o morador.
-2025-04-15 23:19:40,724 - state_machine - INFO - Transcrição do usuário registrada: Entrega confirmada para Renato Oliveira no apartamento 501 notificarei o morador.
-2025-04-15 23:19:40,724 - state_machine - INFO - Transição de estado: State.WAITING -> State.IA_TURN
-2025-04-15 23:19:40,724 - state_machine - INFO - Saindo do estado WAITING
-2025-04-15 23:19:40,724 - state_machine - INFO - Mensagem do sistema registrada: Estado alterado: WAITING -> IA_TURN
-2025-04-15 23:19:40,724 - ai_service - INFO - Enviando solicitação para API em: http://127.0.0.1:8000/messages
-2025-04-15 23:19:40,758 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages "HTTP/1.1 307 Temporary Redirect"
-2025-04-15 23:19:42,229 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages/ "HTTP/1.1 200 OK"
-2025-04-15 23:19:42,230 - ai_service - INFO - Resposta da IA recebida: Entrega confirmada para Renata Oliveira no apartamento 501. Notificarei o morador.
-2025-04-15 23:19:42,230 - state_machine - INFO - Resposta da IA registrada: Entrega confirmada para Renata Oliveira no apartamento 501. Notificarei o morador.
-2025-04-15 23:19:42,231 - audiosocket_handler - INFO - Resposta da IA: Entrega confirmada para Renata Oliveira no apartamento 501. Notificarei o morador.
-2025-04-15 23:19:45,966 - audiosocket_handler - ERROR - Erro ao enviar áudio para o cliente: [Errno 32] Broken pipe
-2025-04-15 23:19:45,966 - audiosocket_handler - WARNING - Falha ao enviar áudio para o cliente
-2025-04-15 23:19:45,966 - state_machine - INFO - Transição de estado: State.IA_TURN -> State.USER_TURN
-2025-04-15 23:19:45,967 - audiosocket_handler - INFO - Detecção de voz iniciada
-2025-04-15 23:19:45,968 - audiosocket_handler - INFO - Recebido mensagem de Hangup
-2025-04-15 23:19:45,968 - state_machine - INFO - Conversa 2c49856e-0e74-440f-9aa5-3b8eab51ac0d finalizada
-2025-04-15 23:19:45,968 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.STANDBY
-2025-04-15 23:19:45,968 - state_machine - INFO - Conversa None finalizada
-2025-04-15 23:19:45,968 - audiosocket_handler - INFO - Conexão com cliente ('127.0.0.1', 52302) fechada
-2025-04-15 23:21:11,118 - __main__ - INFO - Servidor interrompido pelo usuário
-2025-04-15 23:21:11,120 - __main__ - INFO - Servidor encerrado
-2025-04-15 23:21:43,352 - __main__ - INFO - Preparando diretórios para arquivos estáticos e templates...
-2025-04-15 23:21:43,352 - __main__ - INFO - Diretórios criados/verificados: /Users/danerdosreis/development/projects/cienciadigital/audiosocket-simple/templates, /Users/danerdosreis/development/projects/cienciadigital/audiosocket-simple/static
-2025-04-15 23:21:43,352 - __main__ - INFO - Iniciando API de debug...
-2025-04-15 23:21:43,352 - state_machine - INFO - Máquina de estados inicializada em State.STANDBY
-2025-04-15 23:21:43,352 - __main__ - INFO - Iniciando servidor AudioSocket...
-2025-04-15 23:21:58,419 - __main__ - INFO - Nova conexão de 127.0.0.1:53429
-2025-04-15 23:21:58,421 - state_machine - INFO - Conversa None finalizada
-2025-04-15 23:21:58,424 - audiosocket_handler - INFO - Iniciando servidor AudioSocket para cliente ('127.0.0.1', 53429)
-2025-04-15 23:21:58,425 - audiosocket_handler - INFO - Recebido Call ID: 4bd1cda4ac2643cab92d12af757327c2
-2025-04-15 23:21:58,425 - state_machine - INFO - Nova conversa iniciada com ID: eeacffd7-2eee-4039-a71b-1ecbf5f1892a
-2025-04-15 23:22:00,426 - audiosocket_handler - INFO - Enviando saudação: 'Condomínio Apoena, em que posso ajudar?'
-2025-04-15 23:22:04,399 - audiosocket_handler - INFO - Áudio enviado: 48200 bytes
-2025-04-15 23:22:04,399 - state_machine - INFO - Mensagem do sistema registrada: Condomínio Apoena, em que posso ajudar?
-2025-04-15 23:22:04,400 - state_machine - INFO - Transição de estado: State.STANDBY -> State.USER_TURN
-2025-04-15 23:22:04,400 - audiosocket_handler - INFO - Saudação enviada, ativando turno do usuário
-2025-04-15 23:22:04,400 - audiosocket_handler - INFO - Saudação agendada e executada com sucesso
-2025-04-15 23:22:04,400 - audiosocket_handler - INFO - Detecção de voz iniciada
-2025-04-15 23:22:07,436 - audiosocket_handler - INFO - Silêncio detectado por 2.0 segundos. Processando áudio.
-2025-04-15 23:22:07,436 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.WAITING
-2025-04-15 23:22:07,437 - audiosocket_handler - INFO - Processando 117120 bytes de áudio
-2025-04-15 23:22:10,332 - speech_service - INFO - Transcrição: Tanto ele encheu o fato que a médica deu o laudo, condomínio, a poema em que posso ajudar? Boa noite. Tem uma entrega para fazer.
-2025-04-15 23:22:10,431 - audiosocket_handler - INFO - Transcrição: Tanto ele encheu o fato que a médica deu o laudo, condomínio, a poema em que posso ajudar? Boa noite. Tem uma entrega para fazer.
-2025-04-15 23:22:10,432 - state_machine - INFO - Transcrição do usuário registrada: Tanto ele encheu o fato que a médica deu o laudo, condomínio, a poema em que posso ajudar? Boa noite. Tem uma entrega para fazer.
-2025-04-15 23:22:10,432 - state_machine - INFO - Transição de estado: State.WAITING -> State.IA_TURN
-2025-04-15 23:22:10,432 - state_machine - INFO - Saindo do estado WAITING
-2025-04-15 23:22:10,432 - state_machine - INFO - Mensagem do sistema registrada: Estado alterado: WAITING -> IA_TURN
-2025-04-15 23:22:10,432 - ai_service - INFO - ==================================================
-2025-04-15 23:22:10,432 - ai_service - INFO - ENVIANDO REQUISIÇÃO PARA API
-2025-04-15 23:22:10,432 - ai_service - INFO - URL: http://127.0.0.1:8000/messages
-2025-04-15 23:22:10,432 - ai_service - INFO - ID da Conversa: eeacffd7-2eee-4039-a71b-1ecbf5f1892a
-2025-04-15 23:22:10,433 - ai_service - INFO - Mensagem: Tanto ele encheu o fato que a médica deu o laudo, condomínio, a poema em que posso ajudar? Boa noite. Tem uma entrega para fazer.
-2025-04-15 23:22:10,433 - ai_service - INFO - Payload completo: {
-  "id": "eeacffd7-2eee-4039-a71b-1ecbf5f1892a",
-  "content": "Tanto ele encheu o fato que a médica deu o laudo, condomínio, a poema em que posso ajudar? Boa noite. Tem uma entrega para fazer."
+2025-04-15 23:58:50,239 - __main__ - INFO - Preparando diretórios para arquivos estáticos e templates...
+2025-04-15 23:58:50,239 - __main__ - INFO - Diretórios criados/verificados: /Users/danerdosreis/development/projects/cienciadigital/audiosocket-simple/templates, /Users/danerdosreis/development/projects/cienciadigital/audiosocket-simple/static
+2025-04-15 23:58:50,239 - __main__ - INFO - Iniciando API de debug...
+2025-04-15 23:58:50,239 - state_machine - INFO - Máquina de estados inicializada em State.STANDBY
+2025-04-15 23:58:50,240 - __main__ - INFO - Iniciando servidor AudioSocket...
+2025-04-15 23:58:55,064 - __main__ - INFO - Nova conexão de 127.0.0.1:64805
+2025-04-15 23:58:55,065 - state_machine - INFO - Conversa None finalizada
+2025-04-15 23:58:55,065 - audiosocket_handler - INFO - Iniciando servidor AudioSocket para cliente ('127.0.0.1', 64805)
+2025-04-15 23:58:55,068 - audiosocket_handler - INFO - Recebido Call ID: f8997a34bb994b0b84ac449651a07653
+2025-04-15 23:58:55,069 - state_machine - INFO - Nova conversa iniciada com ID: 702ca878-20bd-4fda-8747-d940045b809f
+2025-04-15 23:58:57,072 - audiosocket_handler - INFO - Enviando saudação: 'Condomínio Apoena, em que posso ajudar?'
+2025-04-15 23:58:57,985 - state_machine - INFO - Mensagem do sistema registrada: Condomínio Apoena, em que posso ajudar?
+2025-04-15 23:58:57,985 - state_machine - INFO - Transição de estado: State.STANDBY -> State.USER_TURN
+2025-04-15 23:58:57,985 - state_machine - INFO - *** Sistema pronto para ouvir o usuário ***
+2025-04-15 23:58:57,985 - audiosocket_handler - INFO - Saudação enviada, ativando turno do usuário
+2025-04-15 23:58:57,986 - audiosocket_handler - INFO - Saudação agendada e executada com sucesso
+2025-04-15 23:58:57,986 - audiosocket_handler - INFO - Conexão fechada pelo cliente
+2025-04-15 23:58:57,986 - state_machine - INFO - Conversa 702ca878-20bd-4fda-8747-d940045b809f finalizada
+2025-04-15 23:58:57,986 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.STANDBY
+2025-04-15 23:58:57,986 - audiosocket_handler - INFO - Conexão com cliente ('127.0.0.1', 64805) fechada
+2025-04-15 23:59:01,031 - __main__ - INFO - Nova conexão de 127.0.0.1:64838
+2025-04-15 23:59:01,031 - state_machine - INFO - Conversa None finalizada
+2025-04-15 23:59:01,034 - audiosocket_handler - INFO - Iniciando servidor AudioSocket para cliente ('127.0.0.1', 64838)
+2025-04-15 23:59:01,037 - audiosocket_handler - INFO - Recebido Call ID: 1fd829a030354806a382f85acca25679
+2025-04-15 23:59:01,037 - state_machine - INFO - Nova conversa iniciada com ID: fe098af1-d56f-4d5c-af42-5e01a93d2a11
+2025-04-15 23:59:03,038 - audiosocket_handler - INFO - Enviando saudação: 'Condomínio Apoena, em que posso ajudar?'
+2025-04-15 23:59:03,603 - state_machine - INFO - Mensagem do sistema registrada: Condomínio Apoena, em que posso ajudar?
+2025-04-15 23:59:03,604 - state_machine - INFO - Transição de estado: State.STANDBY -> State.USER_TURN
+2025-04-15 23:59:03,604 - state_machine - INFO - *** Sistema pronto para ouvir o usuário ***
+2025-04-15 23:59:03,604 - audiosocket_handler - INFO - Saudação enviada, ativando turno do usuário
+2025-04-15 23:59:03,604 - audiosocket_handler - INFO - Saudação agendada e executada com sucesso
+2025-04-15 23:59:03,605 - audiosocket_handler - INFO - Detecção de voz iniciada
+2025-04-15 23:59:06,218 - audiosocket_handler - INFO - Silêncio detectado por 2.0 segundos. Processando áudio.
+2025-04-15 23:59:06,218 - audiosocket_handler - INFO - Detectado segmento de fala completo, processando 148 frames
+2025-04-15 23:59:06,219 - audiosocket_handler - INFO - Mudando para estado WAITING para processamento de áudio
+2025-04-15 23:59:06,220 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.WAITING
+2025-04-15 23:59:07,592 - speech_service - WARNING - Erro na transcrição: ResultReason.NoMatch
+2025-04-15 23:59:07,653 - state_machine - INFO - Transição de estado: State.WAITING -> State.USER_TURN
+2025-04-15 23:59:07,653 - state_machine - INFO - Saindo do estado WAITING para State.USER_TURN
+2025-04-15 23:59:07,653 - state_machine - INFO - Mensagem do sistema registrada: Estado alterado: WAITING -> USER_TURN
+2025-04-15 23:59:07,653 - state_machine - INFO - *** Sistema pronto para ouvir o usuário ***
+2025-04-15 23:59:14,555 - audiosocket_handler - INFO - Detecção de voz iniciada
+2025-04-15 23:59:16,636 - audiosocket_handler - INFO - Silêncio detectado por 2.0 segundos. Processando áudio.
+2025-04-15 23:59:16,636 - audiosocket_handler - INFO - Detectado segmento de fala completo, processando 86 frames
+2025-04-15 23:59:16,636 - audiosocket_handler - INFO - Mudando para estado WAITING para processamento de áudio
+2025-04-15 23:59:16,636 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.WAITING
+2025-04-15 23:59:17,644 - speech_service - INFO - Transcrição: Boa noite, entrega para fazer.
+2025-04-15 23:59:17,703 - state_machine - INFO - Transcrição do usuário registrada: Boa noite, entrega para fazer.
+2025-04-15 23:59:17,704 - state_machine - INFO - Transição de estado: State.WAITING -> State.IA_TURN
+2025-04-15 23:59:17,704 - state_machine - INFO - Saindo do estado WAITING para State.IA_TURN
+2025-04-15 23:59:17,704 - state_machine - INFO - Mensagem do sistema registrada: Estado alterado: WAITING -> IA_TURN
+2025-04-15 23:59:17,704 - ai_service - INFO - ==================================================
+2025-04-15 23:59:17,704 - ai_service - INFO - ENVIANDO REQUISIÇÃO PARA API
+2025-04-15 23:59:17,704 - ai_service - INFO - URL: http://127.0.0.1:8000/messages
+2025-04-15 23:59:17,704 - ai_service - INFO - ID da Conversa: fe098af1-d56f-4d5c-af42-5e01a93d2a11
+2025-04-15 23:59:17,705 - ai_service - INFO - Mensagem: Boa noite, entrega para fazer.
+2025-04-15 23:59:17,706 - ai_service - INFO - Payload completo: {
+  "id": "fe098af1-d56f-4d5c-af42-5e01a93d2a11",
+  "content": "Boa noite, entrega para fazer."
 }
-2025-04-15 23:22:10,433 - ai_service - INFO - ==================================================
-2025-04-15 23:22:10,489 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages "HTTP/1.1 307 Temporary Redirect"
-2025-04-15 23:22:12,019 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages/ "HTTP/1.1 200 OK"
-2025-04-15 23:22:12,019 - ai_service - INFO - ==================================================
-2025-04-15 23:22:12,019 - ai_service - INFO - RESPOSTA DA API RECEBIDA (tempo: 1.55s)
-2025-04-15 23:22:12,019 - ai_service - INFO - Status: 200
-2025-04-15 23:22:12,019 - ai_service - INFO - Mensagem: Por favor, me informe o nome do morador e o número do apartamento que receberá a entrega.
-2025-04-15 23:22:12,019 - ai_service - INFO - Estado da chamada: Não especificado
-2025-04-15 23:22:12,020 - ai_service - INFO - ==================================================
-2025-04-15 23:22:12,020 - state_machine - INFO - Resposta da IA registrada: Por favor, me informe o nome do morador e o número do apartamento que receberá a entrega.
-2025-04-15 23:22:12,020 - audiosocket_handler - INFO - Resposta da IA: Por favor, me informe o nome do morador e o número do apartamento que receberá a entrega.
-2025-04-15 23:22:19,675 - audiosocket_handler - INFO - Áudio enviado: 82400 bytes
-2025-04-15 23:22:19,676 - state_machine - INFO - Transição de estado: State.IA_TURN -> State.USER_TURN
-2025-04-15 23:22:19,677 - audiosocket_handler - INFO - Detecção de voz iniciada
-2025-04-15 23:22:22,615 - audiosocket_handler - INFO - Silêncio detectado por 2.0 segundos. Processando áudio.
-2025-04-15 23:22:22,616 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.WAITING
-2025-04-15 23:22:22,616 - audiosocket_handler - INFO - Processando 139840 bytes de áudio
-2025-04-15 23:22:26,042 - speech_service - INFO - Transcrição: Por favor, me informe o nome do morador e o número do apartamento que receberá A Entrega, Renata Oliveira apartamento 501.
-2025-04-15 23:22:26,101 - audiosocket_handler - INFO - Transcrição: Por favor, me informe o nome do morador e o número do apartamento que receberá A Entrega, Renata Oliveira apartamento 501.
-2025-04-15 23:22:26,102 - state_machine - INFO - Transcrição do usuário registrada: Por favor, me informe o nome do morador e o número do apartamento que receberá A Entrega, Renata Oliveira apartamento 501.
-2025-04-15 23:22:26,102 - state_machine - INFO - Transição de estado: State.WAITING -> State.IA_TURN
-2025-04-15 23:22:26,102 - state_machine - INFO - Saindo do estado WAITING
-2025-04-15 23:22:26,102 - state_machine - INFO - Mensagem do sistema registrada: Estado alterado: WAITING -> IA_TURN
-2025-04-15 23:22:26,102 - ai_service - INFO - ==================================================
-2025-04-15 23:22:26,102 - ai_service - INFO - ENVIANDO REQUISIÇÃO PARA API
-2025-04-15 23:22:26,102 - ai_service - INFO - URL: http://127.0.0.1:8000/messages
-2025-04-15 23:22:26,103 - ai_service - INFO - ID da Conversa: eeacffd7-2eee-4039-a71b-1ecbf5f1892a
-2025-04-15 23:22:26,103 - ai_service - INFO - Mensagem: Por favor, me informe o nome do morador e o número do apartamento que receberá A Entrega, Renata Oliveira apartamento 501.
-2025-04-15 23:22:26,103 - ai_service - INFO - Payload completo: {
-  "id": "eeacffd7-2eee-4039-a71b-1ecbf5f1892a",
-  "content": "Por favor, me informe o nome do morador e o número do apartamento que receberá A Entrega, Renata Oliveira apartamento 501."
+2025-04-15 23:59:17,707 - ai_service - INFO - ==================================================
+2025-04-15 23:59:17,776 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages "HTTP/1.1 307 Temporary Redirect"
+2025-04-15 23:59:19,792 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages/ "HTTP/1.1 200 OK"
+2025-04-15 23:59:19,793 - ai_service - INFO - ==================================================
+2025-04-15 23:59:19,793 - ai_service - INFO - RESPOSTA DA API RECEBIDA (tempo: 2.03s)
+2025-04-15 23:59:19,793 - ai_service - INFO - Status: 200
+2025-04-15 23:59:19,793 - ai_service - INFO - Mensagem: Por favor, me informe o seu nome, o número do apartamento e o nome do morador que vai receber a entrega.
+2025-04-15 23:59:19,793 - ai_service - INFO - Estado da chamada: Não especificado
+2025-04-15 23:59:19,793 - ai_service - INFO - ==================================================
+2025-04-15 23:59:19,793 - state_machine - INFO - Resposta da IA registrada: Por favor, me informe o seu nome, o número do apartamento e o nome do morador que vai receber a entrega.
+2025-04-15 23:59:27,980 - audiosocket_handler - INFO - Áudio enviado completamente (98200 bytes)
+2025-04-15 23:59:28,482 - state_machine - INFO - Transição de estado: State.IA_TURN -> State.USER_TURN
+2025-04-15 23:59:28,482 - state_machine - INFO - *** IMPORTANTE: Transição de IA_TURN para USER_TURN - ativando escuta ***
+2025-04-15 23:59:28,482 - state_machine - INFO - Mensagem do sistema registrada: Sistema ativou escuta - aguardando fala do usuário
+2025-04-15 23:59:28,483 - state_machine - INFO - *** Sistema pronto para ouvir o usuário ***
+2025-04-15 23:59:28,486 - audiosocket_handler - INFO - Detecção de voz iniciada
+2025-04-15 23:59:30,618 - audiosocket_handler - INFO - Silêncio detectado por 2.0 segundos. Processando áudio.
+2025-04-15 23:59:30,619 - audiosocket_handler - INFO - Detectado segmento de fala completo, processando 343 frames
+2025-04-15 23:59:30,619 - audiosocket_handler - INFO - Mudando para estado WAITING para processamento de áudio
+2025-04-15 23:59:30,619 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.WAITING
+2025-04-15 23:59:33,918 - speech_service - INFO - Transcrição: Por favor, me informa o seu nome, o número do apartamento e o nome do morador que vai receber A Entrega. Meu nome é danner.
+2025-04-15 23:59:33,979 - state_machine - INFO - Transcrição do usuário registrada: Por favor, me informa o seu nome, o número do apartamento e o nome do morador que vai receber A Entrega. Meu nome é danner.
+2025-04-15 23:59:33,979 - state_machine - INFO - Transição de estado: State.WAITING -> State.IA_TURN
+2025-04-15 23:59:33,979 - state_machine - INFO - Saindo do estado WAITING para State.IA_TURN
+2025-04-15 23:59:33,979 - state_machine - INFO - Mensagem do sistema registrada: Estado alterado: WAITING -> IA_TURN
+2025-04-15 23:59:33,979 - ai_service - INFO - ==================================================
+2025-04-15 23:59:33,979 - ai_service - INFO - ENVIANDO REQUISIÇÃO PARA API
+2025-04-15 23:59:33,979 - ai_service - INFO - URL: http://127.0.0.1:8000/messages
+2025-04-15 23:59:33,979 - ai_service - INFO - ID da Conversa: fe098af1-d56f-4d5c-af42-5e01a93d2a11
+2025-04-15 23:59:33,979 - ai_service - INFO - Mensagem: Por favor, me informa o seu nome, o número do apartamento e o nome do morador que vai receber A Entrega. Meu nome é danner.
+2025-04-15 23:59:33,979 - ai_service - INFO - Payload completo: {
+  "id": "fe098af1-d56f-4d5c-af42-5e01a93d2a11",
+  "content": "Por favor, me informa o seu nome, o número do apartamento e o nome do morador que vai receber A Entrega. Meu nome é danner."
 }
-2025-04-15 23:22:26,103 - ai_service - INFO - ==================================================
-2025-04-15 23:22:26,139 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages "HTTP/1.1 307 Temporary Redirect"
-2025-04-15 23:22:27,950 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages/ "HTTP/1.1 200 OK"
-2025-04-15 23:22:27,951 - ai_service - INFO - ==================================================
-2025-04-15 23:22:27,951 - ai_service - INFO - RESPOSTA DA API RECEBIDA (tempo: 1.82s)
-2025-04-15 23:22:27,951 - ai_service - INFO - Status: 200
-2025-04-15 23:22:27,951 - ai_service - INFO - Mensagem: Entrega confirmada para Renata Oliveira no apartamento 501. Notificarei o morador.
-2025-04-15 23:22:27,951 - ai_service - INFO - Estado da chamada: Não especificado
-2025-04-15 23:22:27,951 - ai_service - INFO - ==================================================
-2025-04-15 23:22:27,951 - state_machine - INFO - Resposta da IA registrada: Entrega confirmada para Renata Oliveira no apartamento 501. Notificarei o morador.
-2025-04-15 23:22:27,951 - audiosocket_handler - INFO - Resposta da IA: Entrega confirmada para Renata Oliveira no apartamento 501. Notificarei o morador.
-2025-04-15 23:22:36,331 - audiosocket_handler - INFO - Áudio enviado: 106800 bytes
-2025-04-15 23:22:36,332 - state_machine - INFO - Transição de estado: State.IA_TURN -> State.USER_TURN
-2025-04-15 23:22:36,333 - audiosocket_handler - INFO - Detecção de voz iniciada
-2025-04-15 23:22:38,336 - audiosocket_handler - INFO - Silêncio detectado por 2.0 segundos. Processando áudio.
-2025-04-15 23:22:38,336 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.WAITING
-2025-04-15 23:22:38,336 - audiosocket_handler - INFO - Processando 110400 bytes de áudio
-2025-04-15 23:22:41,046 - speech_service - INFO - Transcrição: Entrega confirmada para Renata Oliveira no apartamento 501, notificarei o morador.
-2025-04-15 23:22:41,142 - audiosocket_handler - INFO - Transcrição: Entrega confirmada para Renata Oliveira no apartamento 501, notificarei o morador.
-2025-04-15 23:22:41,143 - state_machine - INFO - Transcrição do usuário registrada: Entrega confirmada para Renata Oliveira no apartamento 501, notificarei o morador.
-2025-04-15 23:22:41,143 - state_machine - INFO - Transição de estado: State.WAITING -> State.IA_TURN
-2025-04-15 23:22:41,143 - state_machine - INFO - Saindo do estado WAITING
-2025-04-15 23:22:41,143 - state_machine - INFO - Mensagem do sistema registrada: Estado alterado: WAITING -> IA_TURN
-2025-04-15 23:22:41,143 - ai_service - INFO - ==================================================
-2025-04-15 23:22:41,143 - ai_service - INFO - ENVIANDO REQUISIÇÃO PARA API
-2025-04-15 23:22:41,143 - ai_service - INFO - URL: http://127.0.0.1:8000/messages
-2025-04-15 23:22:41,143 - ai_service - INFO - ID da Conversa: eeacffd7-2eee-4039-a71b-1ecbf5f1892a
-2025-04-15 23:22:41,143 - ai_service - INFO - Mensagem: Entrega confirmada para Renata Oliveira no apartamento 501, notificarei o morador.
-2025-04-15 23:22:41,144 - ai_service - INFO - Payload completo: {
-  "id": "eeacffd7-2eee-4039-a71b-1ecbf5f1892a",
-  "content": "Entrega confirmada para Renata Oliveira no apartamento 501, notificarei o morador."
+2025-04-15 23:59:33,979 - ai_service - INFO - ==================================================
+2025-04-15 23:59:34,009 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages "HTTP/1.1 307 Temporary Redirect"
+2025-04-15 23:59:37,499 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages/ "HTTP/1.1 200 OK"
+2025-04-15 23:59:37,499 - ai_service - INFO - ==================================================
+2025-04-15 23:59:37,499 - ai_service - INFO - RESPOSTA DA API RECEBIDA (tempo: 3.50s)
+2025-04-15 23:59:37,499 - ai_service - INFO - Status: 200
+2025-04-15 23:59:37,499 - ai_service - INFO - Mensagem: Por favor, me informe o número do apartamento e o nome do morador que vai receber a entrega.
+2025-04-15 23:59:37,499 - ai_service - INFO - Estado da chamada: Não especificado
+2025-04-15 23:59:37,499 - ai_service - INFO - ==================================================
+2025-04-15 23:59:37,500 - state_machine - INFO - Resposta da IA registrada: Por favor, me informe o número do apartamento e o nome do morador que vai receber a entrega.
+2025-04-15 23:59:44,732 - audiosocket_handler - INFO - Áudio enviado completamente (87400 bytes)
+2025-04-15 23:59:45,233 - state_machine - INFO - Transição de estado: State.IA_TURN -> State.USER_TURN
+2025-04-15 23:59:45,234 - state_machine - INFO - *** IMPORTANTE: Transição de IA_TURN para USER_TURN - ativando escuta ***
+2025-04-15 23:59:45,234 - state_machine - INFO - Mensagem do sistema registrada: Sistema ativou escuta - aguardando fala do usuário
+2025-04-15 23:59:45,234 - state_machine - INFO - *** Sistema pronto para ouvir o usuário ***
+2025-04-15 23:59:45,235 - audiosocket_handler - INFO - Detecção de voz iniciada
+2025-04-15 23:59:49,274 - audiosocket_handler - INFO - Silêncio detectado por 2.0 segundos. Processando áudio.
+2025-04-15 23:59:49,274 - audiosocket_handler - INFO - Detectado segmento de fala completo, processando 663 frames
+2025-04-15 23:59:49,275 - audiosocket_handler - INFO - Mudando para estado WAITING para processamento de áudio
+2025-04-15 23:59:49,275 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.WAITING
+2025-04-15 23:59:54,257 - speech_service - INFO - Transcrição: Vou fazer uma entrega no apartamento 501 para Artur Oliveira dos reis. Por favor, me informe o número do apartamento e o nome do morador que vai receber A Entrega. Apartamento 501 morador Arthur Oliveira dos reis.
+2025-04-15 23:59:54,332 - state_machine - INFO - Transcrição do usuário registrada: Vou fazer uma entrega no apartamento 501 para Artur Oliveira dos reis. Por favor, me informe o número do apartamento e o nome do morador que vai receber A Entrega. Apartamento 501 morador Arthur Oliveira dos reis.
+2025-04-15 23:59:54,332 - state_machine - INFO - Transição de estado: State.WAITING -> State.IA_TURN
+2025-04-15 23:59:54,332 - state_machine - INFO - Saindo do estado WAITING para State.IA_TURN
+2025-04-15 23:59:54,332 - state_machine - INFO - Mensagem do sistema registrada: Estado alterado: WAITING -> IA_TURN
+2025-04-15 23:59:54,333 - ai_service - INFO - ==================================================
+2025-04-15 23:59:54,333 - ai_service - INFO - ENVIANDO REQUISIÇÃO PARA API
+2025-04-15 23:59:54,333 - ai_service - INFO - URL: http://127.0.0.1:8000/messages
+2025-04-15 23:59:54,333 - ai_service - INFO - ID da Conversa: fe098af1-d56f-4d5c-af42-5e01a93d2a11
+2025-04-15 23:59:54,333 - ai_service - INFO - Mensagem: Vou fazer uma entrega no apartamento 501 para Artur Oliveira dos reis. Por favor, me informe o número do apartamento e o nome do morador que vai receber A Entrega. Apartamento 501 morador Arthur Oliveira dos reis.
+2025-04-15 23:59:54,333 - ai_service - INFO - Payload completo: {
+  "id": "fe098af1-d56f-4d5c-af42-5e01a93d2a11",
+  "content": "Vou fazer uma entrega no apartamento 501 para Artur Oliveira dos reis. Por favor, me informe o número do apartamento e o nome do morador que vai receber A Entrega. Apartamento 501 morador Arthur Oliveira dos reis."
 }
-2025-04-15 23:22:41,144 - ai_service - INFO - ==================================================
-2025-04-15 23:22:41,171 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages "HTTP/1.1 307 Temporary Redirect"
-2025-04-15 23:22:45,096 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages/ "HTTP/1.1 200 OK"
-2025-04-15 23:22:45,096 - ai_service - INFO - ==================================================
-2025-04-15 23:22:45,096 - ai_service - INFO - RESPOSTA DA API RECEBIDA (tempo: 3.93s)
-2025-04-15 23:22:45,096 - ai_service - INFO - Status: 200
-2025-04-15 23:22:45,096 - ai_service - INFO - Mensagem: Entrega confirmada para Renata Oliveira no apartamento 501. Notificarei o morador.
-2025-04-15 23:22:45,096 - ai_service - INFO - Estado da chamada: Não especificado
-2025-04-15 23:22:45,096 - ai_service - INFO - ==================================================
-2025-04-15 23:22:45,097 - state_machine - INFO - Resposta da IA registrada: Entrega confirmada para Renata Oliveira no apartamento 501. Notificarei o morador.
-2025-04-15 23:22:45,097 - audiosocket_handler - INFO - Resposta da IA: Entrega confirmada para Renata Oliveira no apartamento 501. Notificarei o morador.
-2025-04-15 23:22:45,824 - audiosocket_handler - ERROR - Erro ao enviar áudio para o cliente: [Errno 32] Broken pipe
-2025-04-15 23:22:45,824 - audiosocket_handler - WARNING - Falha ao enviar áudio para o cliente
-2025-04-15 23:22:45,824 - state_machine - INFO - Transição de estado: State.IA_TURN -> State.USER_TURN
-2025-04-15 23:22:45,825 - audiosocket_handler - INFO - Detecção de voz iniciada
-2025-04-15 23:22:45,825 - audiosocket_handler - INFO - Recebido mensagem de Hangup
-2025-04-15 23:22:45,825 - state_machine - INFO - Conversa eeacffd7-2eee-4039-a71b-1ecbf5f1892a finalizada
-2025-04-15 23:22:45,825 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.STANDBY
-2025-04-15 23:22:45,826 - state_machine - INFO - Conversa None finalizada
-2025-04-15 23:22:45,826 - audiosocket_handler - INFO - Conexão com cliente ('127.0.0.1', 53429) fechada
-2025-04-15 23:25:24,612 - __main__ - INFO - Nova conexão de 127.0.0.1:54616
-2025-04-15 23:25:24,613 - state_machine - INFO - Conversa None finalizada
-2025-04-15 23:25:24,613 - audiosocket_handler - INFO - Iniciando servidor AudioSocket para cliente ('127.0.0.1', 54616)
-2025-04-15 23:25:24,614 - audiosocket_handler - INFO - Recebido Call ID: 4e35243d9acb45539c994ee7ad7d0cd7
-2025-04-15 23:25:24,614 - state_machine - INFO - Nova conversa iniciada com ID: 69633b83-4a5a-4860-9d6a-ddd6d8cebee7
-2025-04-15 23:25:26,614 - audiosocket_handler - INFO - Enviando saudação: 'Condomínio Apoena, em que posso ajudar?'
-2025-04-15 23:25:30,815 - audiosocket_handler - INFO - Áudio enviado: 48200 bytes
-2025-04-15 23:25:30,816 - state_machine - INFO - Mensagem do sistema registrada: Condomínio Apoena, em que posso ajudar?
-2025-04-15 23:25:30,816 - state_machine - INFO - Transição de estado: State.STANDBY -> State.USER_TURN
-2025-04-15 23:25:30,816 - audiosocket_handler - INFO - Saudação enviada, ativando turno do usuário
-2025-04-15 23:25:30,817 - audiosocket_handler - INFO - Saudação agendada e executada com sucesso
-2025-04-15 23:25:30,817 - audiosocket_handler - INFO - Detecção de voz iniciada
-2025-04-15 23:25:32,853 - audiosocket_handler - INFO - Silêncio detectado por 2.0 segundos. Processando áudio.
-2025-04-15 23:25:32,853 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.WAITING
-2025-04-15 23:25:32,854 - audiosocket_handler - INFO - Processando 110720 bytes de áudio
-2025-04-15 23:25:35,647 - speech_service - INFO - Transcrição: Condomínio a poema em que posso ajudar? Boa noite. Eu tenho uma entrega para fazer.
-2025-04-15 23:25:35,706 - audiosocket_handler - INFO - Transcrição: Condomínio a poema em que posso ajudar? Boa noite. Eu tenho uma entrega para fazer.
-2025-04-15 23:25:35,706 - state_machine - INFO - Transcrição do usuário registrada: Condomínio a poema em que posso ajudar? Boa noite. Eu tenho uma entrega para fazer.
-2025-04-15 23:25:35,706 - state_machine - INFO - Transição de estado: State.WAITING -> State.IA_TURN
-2025-04-15 23:25:35,706 - state_machine - INFO - Saindo do estado WAITING
-2025-04-15 23:25:35,707 - state_machine - INFO - Mensagem do sistema registrada: Estado alterado: WAITING -> IA_TURN
-2025-04-15 23:25:35,707 - ai_service - INFO - ==================================================
-2025-04-15 23:25:35,707 - ai_service - INFO - ENVIANDO REQUISIÇÃO PARA API
-2025-04-15 23:25:35,707 - ai_service - INFO - URL: http://127.0.0.1:8000/messages
-2025-04-15 23:25:35,707 - ai_service - INFO - ID da Conversa: 69633b83-4a5a-4860-9d6a-ddd6d8cebee7
-2025-04-15 23:25:35,707 - ai_service - INFO - Mensagem: Condomínio a poema em que posso ajudar? Boa noite. Eu tenho uma entrega para fazer.
-2025-04-15 23:25:35,708 - ai_service - INFO - Payload completo: {
-  "id": "69633b83-4a5a-4860-9d6a-ddd6d8cebee7",
-  "content": "Condomínio a poema em que posso ajudar? Boa noite. Eu tenho uma entrega para fazer."
-}
-2025-04-15 23:25:35,708 - ai_service - INFO - ==================================================
-2025-04-15 23:25:35,750 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages "HTTP/1.1 307 Temporary Redirect"
-2025-04-15 23:25:37,539 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages/ "HTTP/1.1 200 OK"
-2025-04-15 23:25:37,539 - ai_service - INFO - ==================================================
-2025-04-15 23:25:37,539 - ai_service - INFO - RESPOSTA DA API RECEBIDA (tempo: 1.79s)
-2025-04-15 23:25:37,539 - ai_service - INFO - Status: 200
-2025-04-15 23:25:37,539 - ai_service - INFO - Mensagem: Por favor, me informe o nome do morador e o número do apartamento que deseja fazer a entrega.
-2025-04-15 23:25:37,539 - ai_service - INFO - Estado da chamada: Não especificado
-2025-04-15 23:25:37,539 - ai_service - INFO - ==================================================
-2025-04-15 23:25:37,540 - state_machine - INFO - Resposta da IA registrada: Por favor, me informe o nome do morador e o número do apartamento que deseja fazer a entrega.
-2025-04-15 23:25:37,540 - audiosocket_handler - INFO - Resposta da IA: Por favor, me informe o nome do morador e o número do apartamento que deseja fazer a entrega.
-2025-04-15 23:25:45,077 - audiosocket_handler - INFO - Áudio enviado: 85000 bytes
-2025-04-15 23:25:45,079 - state_machine - INFO - Transição de estado: State.IA_TURN -> State.USER_TURN
-2025-04-15 23:25:45,080 - audiosocket_handler - INFO - Detecção de voz iniciada
-2025-04-15 23:25:47,272 - audiosocket_handler - INFO - Silêncio detectado por 2.0 segundos. Processando áudio.
-2025-04-15 23:25:47,274 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.WAITING
-2025-04-15 23:25:47,274 - audiosocket_handler - INFO - Processando 187520 bytes de áudio
-2025-04-15 23:25:50,915 - speech_service - INFO - Transcrição: Por favor, me informe o nome do morador e o número do apartamento que deseja fazer A Entrega.
-2025-04-15 23:25:52,104 - audiosocket_handler - INFO - Transcrição: Por favor, me informe o nome do morador e o número do apartamento que deseja fazer A Entrega.
-2025-04-15 23:25:52,105 - state_machine - INFO - Transcrição do usuário registrada: Por favor, me informe o nome do morador e o número do apartamento que deseja fazer A Entrega.
-2025-04-15 23:25:52,105 - state_machine - INFO - Transição de estado: State.WAITING -> State.IA_TURN
-2025-04-15 23:25:52,105 - state_machine - INFO - Saindo do estado WAITING
-2025-04-15 23:25:52,105 - state_machine - INFO - Mensagem do sistema registrada: Estado alterado: WAITING -> IA_TURN
-2025-04-15 23:25:52,105 - ai_service - INFO - ==================================================
-2025-04-15 23:25:52,105 - ai_service - INFO - ENVIANDO REQUISIÇÃO PARA API
-2025-04-15 23:25:52,105 - ai_service - INFO - URL: http://127.0.0.1:8000/messages
-2025-04-15 23:25:52,105 - ai_service - INFO - ID da Conversa: 69633b83-4a5a-4860-9d6a-ddd6d8cebee7
-2025-04-15 23:25:52,105 - ai_service - INFO - Mensagem: Por favor, me informe o nome do morador e o número do apartamento que deseja fazer A Entrega.
-2025-04-15 23:25:52,105 - ai_service - INFO - Payload completo: {
-  "id": "69633b83-4a5a-4860-9d6a-ddd6d8cebee7",
-  "content": "Por favor, me informe o nome do morador e o número do apartamento que deseja fazer A Entrega."
-}
-2025-04-15 23:25:52,106 - ai_service - INFO - ==================================================
-2025-04-15 23:25:52,145 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages "HTTP/1.1 307 Temporary Redirect"
-2025-04-15 23:25:56,424 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages/ "HTTP/1.1 200 OK"
-2025-04-15 23:25:56,425 - ai_service - INFO - ==================================================
-2025-04-15 23:25:56,425 - ai_service - INFO - RESPOSTA DA API RECEBIDA (tempo: 4.29s)
-2025-04-15 23:25:56,425 - ai_service - INFO - Status: 200
-2025-04-15 23:25:56,425 - ai_service - INFO - Mensagem: Por favor, me informe o seu nome e o número do apartamento que deseja fazer a entrega.
-2025-04-15 23:25:56,425 - ai_service - INFO - Estado da chamada: Não especificado
-2025-04-15 23:25:56,425 - ai_service - INFO - ==================================================
-2025-04-15 23:25:56,425 - state_machine - INFO - Resposta da IA registrada: Por favor, me informe o seu nome e o número do apartamento que deseja fazer a entrega.
-2025-04-15 23:25:56,425 - audiosocket_handler - INFO - Resposta da IA: Por favor, me informe o seu nome e o número do apartamento que deseja fazer a entrega.
-2025-04-15 23:26:03,471 - audiosocket_handler - INFO - Áudio enviado: 81000 bytes
-2025-04-15 23:26:03,471 - state_machine - INFO - Transição de estado: State.IA_TURN -> State.USER_TURN
-2025-04-15 23:26:03,472 - audiosocket_handler - INFO - Detecção de voz iniciada
-2025-04-15 23:26:07,271 - audiosocket_handler - INFO - Silêncio detectado por 2.0 segundos. Processando áudio.
-2025-04-15 23:26:07,271 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.WAITING
-2025-04-15 23:26:07,272 - audiosocket_handler - INFO - Processando 230720 bytes de áudio
-2025-04-15 23:26:08,562 - speech_service - INFO - Transcrição: Morador Arthur Oliveira.
-2025-04-15 23:26:09,745 - audiosocket_handler - INFO - Transcrição: Morador Arthur Oliveira.
-2025-04-15 23:26:09,745 - state_machine - INFO - Transcrição do usuário registrada: Morador Arthur Oliveira.
-2025-04-15 23:26:09,745 - state_machine - INFO - Transição de estado: State.WAITING -> State.IA_TURN
-2025-04-15 23:26:09,745 - state_machine - INFO - Saindo do estado WAITING
-2025-04-15 23:26:09,745 - state_machine - INFO - Mensagem do sistema registrada: Estado alterado: WAITING -> IA_TURN
-2025-04-15 23:26:09,745 - ai_service - INFO - ==================================================
-2025-04-15 23:26:09,745 - ai_service - INFO - ENVIANDO REQUISIÇÃO PARA API
-2025-04-15 23:26:09,745 - ai_service - INFO - URL: http://127.0.0.1:8000/messages
-2025-04-15 23:26:09,745 - ai_service - INFO - ID da Conversa: 69633b83-4a5a-4860-9d6a-ddd6d8cebee7
-2025-04-15 23:26:09,746 - ai_service - INFO - Mensagem: Morador Arthur Oliveira.
-2025-04-15 23:26:09,746 - ai_service - INFO - Payload completo: {
-  "id": "69633b83-4a5a-4860-9d6a-ddd6d8cebee7",
-  "content": "Morador Arthur Oliveira."
-}
-2025-04-15 23:26:09,746 - ai_service - INFO - ==================================================
-2025-04-15 23:26:09,787 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages "HTTP/1.1 307 Temporary Redirect"
-2025-04-15 23:26:18,599 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages/ "HTTP/1.1 200 OK"
-2025-04-15 23:26:18,601 - ai_service - INFO - ==================================================
-2025-04-15 23:26:18,601 - ai_service - INFO - RESPOSTA DA API RECEBIDA (tempo: 8.82s)
-2025-04-15 23:26:18,601 - ai_service - INFO - Status: 200
-2025-04-15 23:26:18,601 - ai_service - INFO - Mensagem: Por favor, me informe o seu nome e o número do apartamento para a entrega.
-2025-04-15 23:26:18,601 - ai_service - INFO - Estado da chamada: Não especificado
-2025-04-15 23:26:18,601 - ai_service - INFO - ==================================================
-2025-04-15 23:26:18,601 - state_machine - INFO - Resposta da IA registrada: Por favor, me informe o seu nome e o número do apartamento para a entrega.
-2025-04-15 23:26:18,601 - audiosocket_handler - INFO - Resposta da IA: Por favor, me informe o seu nome e o número do apartamento para a entrega.
-2025-04-15 23:26:25,295 - audiosocket_handler - INFO - Áudio enviado: 71600 bytes
-2025-04-15 23:26:25,296 - state_machine - INFO - Transição de estado: State.IA_TURN -> State.USER_TURN
-2025-04-15 23:26:25,297 - audiosocket_handler - INFO - Detecção de voz iniciada
-2025-04-15 23:26:28,652 - audiosocket_handler - INFO - Silêncio detectado por 2.0 segundos. Processando áudio.
-2025-04-15 23:26:28,653 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.WAITING
-2025-04-15 23:26:28,653 - audiosocket_handler - INFO - Processando 243840 bytes de áudio
-2025-04-15 23:26:30,727 - speech_service - WARNING - Erro na transcrição: ResultReason.NoMatch
-2025-04-15 23:26:31,914 - audiosocket_handler - WARNING - Não foi possível transcrever o áudio
-2025-04-15 23:26:31,915 - state_machine - INFO - Transição de estado: State.WAITING -> State.USER_TURN
-2025-04-15 23:26:31,915 - state_machine - INFO - Saindo do estado WAITING
-2025-04-15 23:26:31,915 - state_machine - INFO - Mensagem do sistema registrada: Estado alterado: WAITING -> USER_TURN
-2025-04-15 23:26:31,915 - audiosocket_handler - INFO - Detecção de voz iniciada
-2025-04-15 23:26:33,930 - audiosocket_handler - INFO - Silêncio detectado por 2.0 segundos. Processando áudio.
-2025-04-15 23:26:33,931 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.WAITING
-2025-04-15 23:26:33,931 - audiosocket_handler - INFO - Processando 33280 bytes de áudio
-2025-04-15 23:26:35,018 - speech_service - INFO - Transcrição: O apartamento é 501.
-2025-04-15 23:26:35,081 - audiosocket_handler - INFO - Transcrição: O apartamento é 501.
-2025-04-15 23:26:35,081 - state_machine - INFO - Transcrição do usuário registrada: O apartamento é 501.
-2025-04-15 23:26:35,081 - state_machine - INFO - Transição de estado: State.WAITING -> State.IA_TURN
-2025-04-15 23:26:35,081 - state_machine - INFO - Saindo do estado WAITING
-2025-04-15 23:26:35,081 - state_machine - INFO - Mensagem do sistema registrada: Estado alterado: WAITING -> IA_TURN
-2025-04-15 23:26:35,082 - ai_service - INFO - ==================================================
-2025-04-15 23:26:35,082 - ai_service - INFO - ENVIANDO REQUISIÇÃO PARA API
-2025-04-15 23:26:35,082 - ai_service - INFO - URL: http://127.0.0.1:8000/messages
-2025-04-15 23:26:35,082 - ai_service - INFO - ID da Conversa: 69633b83-4a5a-4860-9d6a-ddd6d8cebee7
-2025-04-15 23:26:35,082 - ai_service - INFO - Mensagem: O apartamento é 501.
-2025-04-15 23:26:35,082 - ai_service - INFO - Payload completo: {
-  "id": "69633b83-4a5a-4860-9d6a-ddd6d8cebee7",
-  "content": "O apartamento é 501."
-}
-2025-04-15 23:26:35,082 - ai_service - INFO - ==================================================
-2025-04-15 23:26:35,116 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages "HTTP/1.1 307 Temporary Redirect"
-2025-04-15 23:26:37,434 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages/ "HTTP/1.1 200 OK"
-2025-04-15 23:26:37,435 - ai_service - INFO - ==================================================
-2025-04-15 23:26:37,435 - ai_service - INFO - RESPOSTA DA API RECEBIDA (tempo: 2.32s)
-2025-04-15 23:26:37,435 - ai_service - INFO - Status: 200
-2025-04-15 23:26:37,435 - ai_service - INFO - Mensagem: Por favor, me informe o seu nome para prosseguir com a entrega.
-2025-04-15 23:26:37,435 - ai_service - INFO - Estado da chamada: Não especificado
-2025-04-15 23:26:37,435 - ai_service - INFO - ==================================================
-2025-04-15 23:26:37,436 - state_machine - INFO - Resposta da IA registrada: Por favor, me informe o seu nome para prosseguir com a entrega.
-2025-04-15 23:26:37,436 - audiosocket_handler - INFO - Resposta da IA: Por favor, me informe o seu nome para prosseguir com a entrega.
-2025-04-15 23:26:41,261 - audiosocket_handler - ERROR - Erro ao enviar áudio para o cliente: [Errno 32] Broken pipe
-2025-04-15 23:26:41,261 - audiosocket_handler - WARNING - Falha ao enviar áudio para o cliente
-2025-04-15 23:26:41,261 - state_machine - INFO - Transição de estado: State.IA_TURN -> State.USER_TURN
-2025-04-15 23:26:41,262 - audiosocket_handler - INFO - Detecção de voz iniciada
-2025-04-15 23:26:41,265 - audiosocket_handler - INFO - Recebido mensagem de Hangup
-2025-04-15 23:26:41,265 - state_machine - INFO - Conversa 69633b83-4a5a-4860-9d6a-ddd6d8cebee7 finalizada
-2025-04-15 23:26:41,265 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.STANDBY
-2025-04-15 23:26:41,265 - state_machine - INFO - Conversa None finalizada
-2025-04-15 23:26:41,265 - audiosocket_handler - INFO - Conexão com cliente ('127.0.0.1', 54616) fechada
-2025-04-15 23:26:45,546 - __main__ - INFO - Nova conexão de 127.0.0.1:55092
-2025-04-15 23:26:45,546 - state_machine - INFO - Conversa None finalizada
-2025-04-15 23:26:45,547 - audiosocket_handler - INFO - Iniciando servidor AudioSocket para cliente ('127.0.0.1', 55092)
-2025-04-15 23:26:45,547 - audiosocket_handler - INFO - Recebido Call ID: 375f0a7f36bb4d72920fce609a54f3ad
-2025-04-15 23:26:45,547 - state_machine - INFO - Nova conversa iniciada com ID: eb9e2651-c5e2-442a-b4a7-0855ab87af5b
-2025-04-15 23:26:47,548 - audiosocket_handler - INFO - Enviando saudação: 'Condomínio Apoena, em que posso ajudar?'
-2025-04-15 23:26:51,752 - audiosocket_handler - INFO - Áudio enviado: 48200 bytes
-2025-04-15 23:26:51,752 - state_machine - INFO - Mensagem do sistema registrada: Condomínio Apoena, em que posso ajudar?
-2025-04-15 23:26:51,753 - state_machine - INFO - Transição de estado: State.STANDBY -> State.USER_TURN
-2025-04-15 23:26:51,753 - audiosocket_handler - INFO - Saudação enviada, ativando turno do usuário
-2025-04-15 23:26:51,753 - audiosocket_handler - INFO - Saudação agendada e executada com sucesso
-2025-04-15 23:26:51,754 - audiosocket_handler - INFO - Detecção de voz iniciada
-2025-04-15 23:26:54,798 - audiosocket_handler - INFO - Silêncio detectado por 2.0 segundos. Processando áudio.
-2025-04-15 23:26:54,799 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.WAITING
-2025-04-15 23:26:54,799 - audiosocket_handler - INFO - Processando 98240 bytes de áudio
-2025-04-15 23:26:56,577 - speech_service - INFO - Transcrição: Condomínio aporena em que posso ajudar?
-2025-04-15 23:26:57,766 - audiosocket_handler - INFO - Transcrição: Condomínio aporena em que posso ajudar?
-2025-04-15 23:26:57,766 - state_machine - INFO - Transcrição do usuário registrada: Condomínio aporena em que posso ajudar?
-2025-04-15 23:26:57,767 - state_machine - INFO - Transição de estado: State.WAITING -> State.IA_TURN
-2025-04-15 23:26:57,767 - state_machine - INFO - Saindo do estado WAITING
-2025-04-15 23:26:57,767 - state_machine - INFO - Mensagem do sistema registrada: Estado alterado: WAITING -> IA_TURN
-2025-04-15 23:26:57,767 - ai_service - INFO - ==================================================
-2025-04-15 23:26:57,767 - ai_service - INFO - ENVIANDO REQUISIÇÃO PARA API
-2025-04-15 23:26:57,767 - ai_service - INFO - URL: http://127.0.0.1:8000/messages
-2025-04-15 23:26:57,767 - ai_service - INFO - ID da Conversa: eb9e2651-c5e2-442a-b4a7-0855ab87af5b
-2025-04-15 23:26:57,767 - ai_service - INFO - Mensagem: Condomínio aporena em que posso ajudar?
-2025-04-15 23:26:57,768 - ai_service - INFO - Payload completo: {
-  "id": "eb9e2651-c5e2-442a-b4a7-0855ab87af5b",
-  "content": "Condomínio aporena em que posso ajudar?"
-}
-2025-04-15 23:26:57,768 - ai_service - INFO - ==================================================
-2025-04-15 23:26:57,807 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages "HTTP/1.1 307 Temporary Redirect"
-2025-04-15 23:26:59,560 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages/ "HTTP/1.1 200 OK"
-2025-04-15 23:26:59,560 - ai_service - INFO - ==================================================
-2025-04-15 23:26:59,560 - ai_service - INFO - RESPOSTA DA API RECEBIDA (tempo: 1.76s)
-2025-04-15 23:26:59,560 - ai_service - INFO - Status: 200
-2025-04-15 23:26:59,560 - ai_service - INFO - Mensagem: Por favor, me informe sua intenção.
-2025-04-15 23:26:59,560 - ai_service - INFO - Estado da chamada: Não especificado
-2025-04-15 23:26:59,561 - ai_service - INFO - ==================================================
-2025-04-15 23:26:59,561 - state_machine - INFO - Resposta da IA registrada: Por favor, me informe sua intenção.
-2025-04-15 23:26:59,561 - audiosocket_handler - INFO - Resposta da IA: Por favor, me informe sua intenção.
-2025-04-15 23:27:03,865 - audiosocket_handler - INFO - Áudio enviado: 44000 bytes
-2025-04-15 23:27:03,866 - state_machine - INFO - Transição de estado: State.IA_TURN -> State.USER_TURN
-2025-04-15 23:27:03,867 - audiosocket_handler - INFO - Detecção de voz iniciada
-2025-04-15 23:27:06,560 - audiosocket_handler - INFO - Silêncio detectado por 2.0 segundos. Processando áudio.
-2025-04-15 23:27:06,563 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.WAITING
-2025-04-15 23:27:06,563 - audiosocket_handler - INFO - Processando 92160 bytes de áudio
-2025-04-15 23:27:08,883 - speech_service - INFO - Transcrição: Por favor, me informe sua intenção, uma entrega para fazer.
-2025-04-15 23:27:08,944 - audiosocket_handler - INFO - Transcrição: Por favor, me informe sua intenção, uma entrega para fazer.
-2025-04-15 23:27:08,944 - state_machine - INFO - Transcrição do usuário registrada: Por favor, me informe sua intenção, uma entrega para fazer.
-2025-04-15 23:27:08,944 - state_machine - INFO - Transição de estado: State.WAITING -> State.IA_TURN
-2025-04-15 23:27:08,945 - state_machine - INFO - Saindo do estado WAITING
-2025-04-15 23:27:08,945 - state_machine - INFO - Mensagem do sistema registrada: Estado alterado: WAITING -> IA_TURN
-2025-04-15 23:27:08,945 - ai_service - INFO - ==================================================
-2025-04-15 23:27:08,945 - ai_service - INFO - ENVIANDO REQUISIÇÃO PARA API
-2025-04-15 23:27:08,945 - ai_service - INFO - URL: http://127.0.0.1:8000/messages
-2025-04-15 23:27:08,945 - ai_service - INFO - ID da Conversa: eb9e2651-c5e2-442a-b4a7-0855ab87af5b
-2025-04-15 23:27:08,945 - ai_service - INFO - Mensagem: Por favor, me informe sua intenção, uma entrega para fazer.
-2025-04-15 23:27:08,946 - ai_service - INFO - Payload completo: {
-  "id": "eb9e2651-c5e2-442a-b4a7-0855ab87af5b",
-  "content": "Por favor, me informe sua intenção, uma entrega para fazer."
-}
-2025-04-15 23:27:08,946 - ai_service - INFO - ==================================================
-2025-04-15 23:27:08,987 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages "HTTP/1.1 307 Temporary Redirect"
-2025-04-15 23:27:12,154 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages/ "HTTP/1.1 200 OK"
-2025-04-15 23:27:12,155 - ai_service - INFO - ==================================================
-2025-04-15 23:27:12,155 - ai_service - INFO - RESPOSTA DA API RECEBIDA (tempo: 3.18s)
-2025-04-15 23:27:12,155 - ai_service - INFO - Status: 200
-2025-04-15 23:27:12,155 - ai_service - INFO - Mensagem: Por favor, me informe o nome do morador que vai receber a entrega.
-2025-04-15 23:27:12,155 - ai_service - INFO - Estado da chamada: Não especificado
-2025-04-15 23:27:12,155 - ai_service - INFO - ==================================================
-2025-04-15 23:27:12,155 - state_machine - INFO - Resposta da IA registrada: Por favor, me informe o nome do morador que vai receber a entrega.
-2025-04-15 23:27:12,155 - audiosocket_handler - INFO - Resposta da IA: Por favor, me informe o nome do morador que vai receber a entrega.
-2025-04-15 23:27:17,520 - audiosocket_handler - INFO - Áudio enviado: 65800 bytes
-2025-04-15 23:27:17,520 - state_machine - INFO - Transição de estado: State.IA_TURN -> State.USER_TURN
-2025-04-15 23:27:17,520 - audiosocket_handler - INFO - Detecção de voz iniciada
-2025-04-15 23:27:20,121 - audiosocket_handler - INFO - Silêncio detectado por 2.0 segundos. Processando áudio.
-2025-04-15 23:27:20,123 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.WAITING
-2025-04-15 23:27:20,123 - audiosocket_handler - INFO - Processando 113600 bytes de áudio
-2025-04-15 23:27:22,954 - speech_service - INFO - Transcrição: Por favor, me informe o nome do morador que vai receber A Entrega, Artur Oliveira dos reis.
-2025-04-15 23:27:23,014 - audiosocket_handler - INFO - Transcrição: Por favor, me informe o nome do morador que vai receber A Entrega, Artur Oliveira dos reis.
-2025-04-15 23:27:23,014 - state_machine - INFO - Transcrição do usuário registrada: Por favor, me informe o nome do morador que vai receber A Entrega, Artur Oliveira dos reis.
-2025-04-15 23:27:23,015 - state_machine - INFO - Transição de estado: State.WAITING -> State.IA_TURN
-2025-04-15 23:27:23,015 - state_machine - INFO - Saindo do estado WAITING
-2025-04-15 23:27:23,015 - state_machine - INFO - Mensagem do sistema registrada: Estado alterado: WAITING -> IA_TURN
-2025-04-15 23:27:23,015 - ai_service - INFO - ==================================================
-2025-04-15 23:27:23,015 - ai_service - INFO - ENVIANDO REQUISIÇÃO PARA API
-2025-04-15 23:27:23,015 - ai_service - INFO - URL: http://127.0.0.1:8000/messages
-2025-04-15 23:27:23,015 - ai_service - INFO - ID da Conversa: eb9e2651-c5e2-442a-b4a7-0855ab87af5b
-2025-04-15 23:27:23,015 - ai_service - INFO - Mensagem: Por favor, me informe o nome do morador que vai receber A Entrega, Artur Oliveira dos reis.
-2025-04-15 23:27:23,015 - ai_service - INFO - Payload completo: {
-  "id": "eb9e2651-c5e2-442a-b4a7-0855ab87af5b",
-  "content": "Por favor, me informe o nome do morador que vai receber A Entrega, Artur Oliveira dos reis."
-}
-2025-04-15 23:27:23,015 - ai_service - INFO - ==================================================
-2025-04-15 23:27:23,053 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages "HTTP/1.1 307 Temporary Redirect"
-2025-04-15 23:27:25,869 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages/ "HTTP/1.1 200 OK"
-2025-04-15 23:27:25,870 - ai_service - INFO - ==================================================
-2025-04-15 23:27:25,870 - ai_service - INFO - RESPOSTA DA API RECEBIDA (tempo: 2.82s)
-2025-04-15 23:27:25,870 - ai_service - INFO - Status: 200
-2025-04-15 23:27:25,870 - ai_service - INFO - Mensagem: Por favor, me informe o nome do visitante e o número do apartamento para a entrega.
-2025-04-15 23:27:25,870 - ai_service - INFO - Estado da chamada: Não especificado
-2025-04-15 23:27:25,870 - ai_service - INFO - ==================================================
-2025-04-15 23:27:25,870 - state_machine - INFO - Resposta da IA registrada: Por favor, me informe o nome do visitante e o número do apartamento para a entrega.
-2025-04-15 23:27:25,870 - audiosocket_handler - INFO - Resposta da IA: Por favor, me informe o nome do visitante e o número do apartamento para a entrega.
-2025-04-15 23:27:32,996 - audiosocket_handler - INFO - Áudio enviado: 79200 bytes
-2025-04-15 23:27:33,001 - state_machine - INFO - Transição de estado: State.IA_TURN -> State.USER_TURN
-2025-04-15 23:27:33,003 - audiosocket_handler - INFO - Detecção de voz iniciada
-2025-04-15 23:27:35,476 - audiosocket_handler - INFO - Silêncio detectado por 2.0 segundos. Processando áudio.
-2025-04-15 23:27:35,477 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.WAITING
-2025-04-15 23:27:35,477 - audiosocket_handler - INFO - Processando 104320 bytes de áudio
-2025-04-15 23:27:38,114 - speech_service - INFO - Transcrição: Por favor, me informe o nome do visitante e o número do apartamento para entrega. Meu nome é Danger.
-2025-04-15 23:27:38,197 - audiosocket_handler - INFO - Transcrição: Por favor, me informe o nome do visitante e o número do apartamento para entrega. Meu nome é Danger.
-2025-04-15 23:27:38,198 - state_machine - INFO - Transcrição do usuário registrada: Por favor, me informe o nome do visitante e o número do apartamento para entrega. Meu nome é Danger.
-2025-04-15 23:27:38,198 - state_machine - INFO - Transição de estado: State.WAITING -> State.IA_TURN
-2025-04-15 23:27:38,198 - state_machine - INFO - Saindo do estado WAITING
-2025-04-15 23:27:38,198 - state_machine - INFO - Mensagem do sistema registrada: Estado alterado: WAITING -> IA_TURN
-2025-04-15 23:27:38,198 - ai_service - INFO - ==================================================
-2025-04-15 23:27:38,198 - ai_service - INFO - ENVIANDO REQUISIÇÃO PARA API
-2025-04-15 23:27:38,198 - ai_service - INFO - URL: http://127.0.0.1:8000/messages
-2025-04-15 23:27:38,198 - ai_service - INFO - ID da Conversa: eb9e2651-c5e2-442a-b4a7-0855ab87af5b
-2025-04-15 23:27:38,198 - ai_service - INFO - Mensagem: Por favor, me informe o nome do visitante e o número do apartamento para entrega. Meu nome é Danger.
-2025-04-15 23:27:38,198 - ai_service - INFO - Payload completo: {
-  "id": "eb9e2651-c5e2-442a-b4a7-0855ab87af5b",
-  "content": "Por favor, me informe o nome do visitante e o número do apartamento para entrega. Meu nome é Danger."
-}
-2025-04-15 23:27:38,198 - ai_service - INFO - ==================================================
-2025-04-15 23:27:38,236 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages "HTTP/1.1 307 Temporary Redirect"
-2025-04-15 23:27:40,518 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages/ "HTTP/1.1 200 OK"
-2025-04-15 23:27:40,518 - ai_service - INFO - ==================================================
-2025-04-15 23:27:40,518 - ai_service - INFO - RESPOSTA DA API RECEBIDA (tempo: 2.29s)
-2025-04-15 23:27:40,518 - ai_service - INFO - Status: 200
-2025-04-15 23:27:40,518 - ai_service - INFO - Mensagem: Por favor, me informe o número do apartamento para entrega.
-2025-04-15 23:27:40,518 - ai_service - INFO - Estado da chamada: Não especificado
-2025-04-15 23:27:40,518 - ai_service - INFO - ==================================================
-2025-04-15 23:27:40,518 - state_machine - INFO - Resposta da IA registrada: Por favor, me informe o número do apartamento para entrega.
-2025-04-15 23:27:40,519 - audiosocket_handler - INFO - Resposta da IA: Por favor, me informe o número do apartamento para entrega.
-2025-04-15 23:27:46,252 - audiosocket_handler - INFO - Áudio enviado: 60800 bytes
-2025-04-15 23:27:46,253 - state_machine - INFO - Transição de estado: State.IA_TURN -> State.USER_TURN
-2025-04-15 23:27:46,254 - audiosocket_handler - INFO - Detecção de voz iniciada
-2025-04-15 23:27:48,259 - audiosocket_handler - INFO - Silêncio detectado por 2.0 segundos. Processando áudio.
-2025-04-15 23:27:48,259 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.WAITING
-2025-04-15 23:27:48,260 - audiosocket_handler - INFO - Processando 125120 bytes de áudio
-2025-04-15 23:27:51,322 - speech_service - INFO - Transcrição: E A Entrega para o apartamento 501? Por favor, me informe o número do apartamento para entrega 501.
-2025-04-15 23:27:51,379 - audiosocket_handler - INFO - Transcrição: E A Entrega para o apartamento 501? Por favor, me informe o número do apartamento para entrega 501.
-2025-04-15 23:27:51,380 - state_machine - INFO - Transcrição do usuário registrada: E A Entrega para o apartamento 501? Por favor, me informe o número do apartamento para entrega 501.
-2025-04-15 23:27:51,380 - state_machine - INFO - Transição de estado: State.WAITING -> State.IA_TURN
-2025-04-15 23:27:51,380 - state_machine - INFO - Saindo do estado WAITING
-2025-04-15 23:27:51,380 - state_machine - INFO - Mensagem do sistema registrada: Estado alterado: WAITING -> IA_TURN
-2025-04-15 23:27:51,381 - ai_service - INFO - ==================================================
-2025-04-15 23:27:51,381 - ai_service - INFO - ENVIANDO REQUISIÇÃO PARA API
-2025-04-15 23:27:51,381 - ai_service - INFO - URL: http://127.0.0.1:8000/messages
-2025-04-15 23:27:51,381 - ai_service - INFO - ID da Conversa: eb9e2651-c5e2-442a-b4a7-0855ab87af5b
-2025-04-15 23:27:51,381 - ai_service - INFO - Mensagem: E A Entrega para o apartamento 501? Por favor, me informe o número do apartamento para entrega 501.
-2025-04-15 23:27:51,381 - ai_service - INFO - Payload completo: {
-  "id": "eb9e2651-c5e2-442a-b4a7-0855ab87af5b",
-  "content": "E A Entrega para o apartamento 501? Por favor, me informe o número do apartamento para entrega 501."
-}
-2025-04-15 23:27:51,381 - ai_service - INFO - ==================================================
-2025-04-15 23:27:51,415 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages "HTTP/1.1 307 Temporary Redirect"
-2025-04-15 23:27:53,622 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages/ "HTTP/1.1 200 OK"
-2025-04-15 23:27:53,622 - ai_service - INFO - ==================================================
-2025-04-15 23:27:53,622 - ai_service - INFO - RESPOSTA DA API RECEBIDA (tempo: 2.21s)
-2025-04-15 23:27:53,622 - ai_service - INFO - Status: 200
-2025-04-15 23:27:53,622 - ai_service - INFO - Mensagem: Entrega confirmada para Artur Oliveira dos Reis no apartamento 501. Notificarei o morador.
-2025-04-15 23:27:53,622 - ai_service - INFO - Estado da chamada: Não especificado
-2025-04-15 23:27:53,622 - ai_service - INFO - ==================================================
-2025-04-15 23:27:53,623 - state_machine - INFO - Resposta da IA registrada: Entrega confirmada para Artur Oliveira dos Reis no apartamento 501. Notificarei o morador.
-2025-04-15 23:27:53,623 - audiosocket_handler - INFO - Resposta da IA: Entrega confirmada para Artur Oliveira dos Reis no apartamento 501. Notificarei o morador.
-2025-04-15 23:28:03,441 - audiosocket_handler - INFO - Áudio enviado: 111400 bytes
-2025-04-15 23:28:03,442 - state_machine - INFO - Transição de estado: State.IA_TURN -> State.USER_TURN
-2025-04-15 23:28:03,444 - audiosocket_handler - INFO - Detecção de voz iniciada
-2025-04-15 23:28:05,457 - audiosocket_handler - INFO - Silêncio detectado por 2.0 segundos. Processando áudio.
-2025-04-15 23:28:05,458 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.WAITING
-2025-04-15 23:28:05,458 - audiosocket_handler - INFO - Processando 135360 bytes de áudio
-2025-04-15 23:28:08,670 - speech_service - INFO - Transcrição: Entrega confirmada para Artur Oliveira dos reis, no apartamento 501 notificarei o morador.
-2025-04-15 23:28:08,780 - audiosocket_handler - INFO - Transcrição: Entrega confirmada para Artur Oliveira dos reis, no apartamento 501 notificarei o morador.
-2025-04-15 23:28:08,780 - state_machine - INFO - Transcrição do usuário registrada: Entrega confirmada para Artur Oliveira dos reis, no apartamento 501 notificarei o morador.
-2025-04-15 23:28:08,780 - state_machine - INFO - Transição de estado: State.WAITING -> State.IA_TURN
-2025-04-15 23:28:08,780 - state_machine - INFO - Saindo do estado WAITING
-2025-04-15 23:28:08,780 - state_machine - INFO - Mensagem do sistema registrada: Estado alterado: WAITING -> IA_TURN
-2025-04-15 23:28:08,781 - ai_service - INFO - ==================================================
-2025-04-15 23:28:08,781 - ai_service - INFO - ENVIANDO REQUISIÇÃO PARA API
-2025-04-15 23:28:08,781 - ai_service - INFO - URL: http://127.0.0.1:8000/messages
-2025-04-15 23:28:08,781 - ai_service - INFO - ID da Conversa: eb9e2651-c5e2-442a-b4a7-0855ab87af5b
-2025-04-15 23:28:08,781 - ai_service - INFO - Mensagem: Entrega confirmada para Artur Oliveira dos reis, no apartamento 501 notificarei o morador.
-2025-04-15 23:28:08,781 - ai_service - INFO - Payload completo: {
-  "id": "eb9e2651-c5e2-442a-b4a7-0855ab87af5b",
+2025-04-15 23:59:54,333 - ai_service - INFO - ==================================================
+2025-04-15 23:59:54,367 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages "HTTP/1.1 307 Temporary Redirect"
+2025-04-15 23:59:55,935 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages/ "HTTP/1.1 200 OK"
+2025-04-15 23:59:55,935 - ai_service - INFO - ==================================================
+2025-04-15 23:59:55,935 - ai_service - INFO - RESPOSTA DA API RECEBIDA (tempo: 1.57s)
+2025-04-15 23:59:55,935 - ai_service - INFO - Status: 200
+2025-04-15 23:59:55,935 - ai_service - INFO - Mensagem: Entrega confirmada para Artur Oliveira dos Reis no apartamento 501. Notificarei o morador.
+2025-04-15 23:59:55,935 - ai_service - INFO - Estado da chamada: Não especificado
+2025-04-15 23:59:55,935 - ai_service - INFO - ==================================================
+2025-04-15 23:59:55,936 - state_machine - INFO - Resposta da IA registrada: Entrega confirmada para Artur Oliveira dos Reis no apartamento 501. Notificarei o morador.
+2025-04-16 00:00:04,932 - audiosocket_handler - INFO - Áudio enviado completamente (111400 bytes)
+2025-04-16 00:00:05,434 - state_machine - INFO - Transição de estado: State.IA_TURN -> State.USER_TURN
+2025-04-16 00:00:05,435 - state_machine - INFO - *** IMPORTANTE: Transição de IA_TURN para USER_TURN - ativando escuta ***
+2025-04-16 00:00:05,435 - state_machine - INFO - Mensagem do sistema registrada: Sistema ativou escuta - aguardando fala do usuário
+2025-04-16 00:00:05,435 - state_machine - INFO - *** Sistema pronto para ouvir o usuário ***
+2025-04-16 00:00:05,440 - audiosocket_handler - INFO - Detecção de voz iniciada
+2025-04-16 00:00:07,456 - audiosocket_handler - INFO - Silêncio detectado por 2.0 segundos. Processando áudio.
+2025-04-16 00:00:07,456 - audiosocket_handler - INFO - Detectado segmento de fala completo, processando 330 frames
+2025-04-16 00:00:07,457 - audiosocket_handler - INFO - Mudando para estado WAITING para processamento de áudio
+2025-04-16 00:00:07,457 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.WAITING
+2025-04-16 00:00:10,120 - speech_service - INFO - Transcrição: Entrega confirmada para Artur Oliveira dos reis, no apartamento 501 notificarei o morador.
+2025-04-16 00:00:10,275 - state_machine - INFO - Transcrição do usuário registrada: Entrega confirmada para Artur Oliveira dos reis, no apartamento 501 notificarei o morador.
+2025-04-16 00:00:10,275 - state_machine - INFO - Transição de estado: State.WAITING -> State.IA_TURN
+2025-04-16 00:00:10,275 - state_machine - INFO - Saindo do estado WAITING para State.IA_TURN
+2025-04-16 00:00:10,275 - state_machine - INFO - Mensagem do sistema registrada: Estado alterado: WAITING -> IA_TURN
+2025-04-16 00:00:10,275 - ai_service - INFO - ==================================================
+2025-04-16 00:00:10,276 - ai_service - INFO - ENVIANDO REQUISIÇÃO PARA API
+2025-04-16 00:00:10,276 - ai_service - INFO - URL: http://127.0.0.1:8000/messages
+2025-04-16 00:00:10,276 - ai_service - INFO - ID da Conversa: fe098af1-d56f-4d5c-af42-5e01a93d2a11
+2025-04-16 00:00:10,276 - ai_service - INFO - Mensagem: Entrega confirmada para Artur Oliveira dos reis, no apartamento 501 notificarei o morador.
+2025-04-16 00:00:10,276 - ai_service - INFO - Payload completo: {
+  "id": "fe098af1-d56f-4d5c-af42-5e01a93d2a11",
   "content": "Entrega confirmada para Artur Oliveira dos reis, no apartamento 501 notificarei o morador."
 }
-2025-04-15 23:28:08,781 - ai_service - INFO - ==================================================
-2025-04-15 23:28:08,828 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages "HTTP/1.1 307 Temporary Redirect"
-2025-04-15 23:28:11,843 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages/ "HTTP/1.1 200 OK"
-2025-04-15 23:28:11,843 - ai_service - INFO - ==================================================
-2025-04-15 23:28:11,844 - ai_service - INFO - RESPOSTA DA API RECEBIDA (tempo: 3.02s)
-2025-04-15 23:28:11,844 - ai_service - INFO - Status: 200
-2025-04-15 23:28:11,844 - ai_service - INFO - Mensagem: Entrega confirmada para Artur Oliveira dos Reis no apartamento 501. Notificarei o morador.
-2025-04-15 23:28:11,844 - ai_service - INFO - Estado da chamada: Não especificado
-2025-04-15 23:28:11,844 - ai_service - INFO - ==================================================
-2025-04-15 23:28:11,844 - state_machine - INFO - Resposta da IA registrada: Entrega confirmada para Artur Oliveira dos Reis no apartamento 501. Notificarei o morador.
-2025-04-15 23:28:11,844 - audiosocket_handler - INFO - Resposta da IA: Entrega confirmada para Artur Oliveira dos Reis no apartamento 501. Notificarei o morador.
-2025-04-15 23:28:20,449 - audiosocket_handler - INFO - Áudio enviado: 111400 bytes
-2025-04-15 23:28:20,451 - state_machine - INFO - Transição de estado: State.IA_TURN -> State.USER_TURN
-2025-04-15 23:28:20,452 - audiosocket_handler - INFO - Detecção de voz iniciada
-2025-04-15 23:28:22,456 - audiosocket_handler - INFO - Silêncio detectado por 2.0 segundos. Processando áudio.
-2025-04-15 23:28:22,457 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.WAITING
-2025-04-15 23:28:22,457 - audiosocket_handler - INFO - Processando 132800 bytes de áudio
-2025-04-15 23:28:25,646 - speech_service - INFO - Transcrição: Entrega confirmada para Artur Oliveira dos reis, no apartamento 501 notificarei o morador.
-2025-04-15 23:28:25,708 - audiosocket_handler - INFO - Transcrição: Entrega confirmada para Artur Oliveira dos reis, no apartamento 501 notificarei o morador.
-2025-04-15 23:28:25,709 - state_machine - INFO - Transcrição do usuário registrada: Entrega confirmada para Artur Oliveira dos reis, no apartamento 501 notificarei o morador.
-2025-04-15 23:28:25,709 - state_machine - INFO - Transição de estado: State.WAITING -> State.IA_TURN
-2025-04-15 23:28:25,709 - state_machine - INFO - Saindo do estado WAITING
-2025-04-15 23:28:25,709 - state_machine - INFO - Mensagem do sistema registrada: Estado alterado: WAITING -> IA_TURN
-2025-04-15 23:28:25,709 - ai_service - INFO - ==================================================
-2025-04-15 23:28:25,709 - ai_service - INFO - ENVIANDO REQUISIÇÃO PARA API
-2025-04-15 23:28:25,709 - ai_service - INFO - URL: http://127.0.0.1:8000/messages
-2025-04-15 23:28:25,710 - ai_service - INFO - ID da Conversa: eb9e2651-c5e2-442a-b4a7-0855ab87af5b
-2025-04-15 23:28:25,710 - ai_service - INFO - Mensagem: Entrega confirmada para Artur Oliveira dos reis, no apartamento 501 notificarei o morador.
-2025-04-15 23:28:25,710 - ai_service - INFO - Payload completo: {
-  "id": "eb9e2651-c5e2-442a-b4a7-0855ab87af5b",
+2025-04-16 00:00:10,276 - ai_service - INFO - ==================================================
+2025-04-16 00:00:10,311 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages "HTTP/1.1 307 Temporary Redirect"
+2025-04-16 00:00:12,273 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages/ "HTTP/1.1 200 OK"
+2025-04-16 00:00:12,274 - ai_service - INFO - ==================================================
+2025-04-16 00:00:12,274 - ai_service - INFO - RESPOSTA DA API RECEBIDA (tempo: 1.97s)
+2025-04-16 00:00:12,274 - ai_service - INFO - Status: 200
+2025-04-16 00:00:12,274 - ai_service - INFO - Mensagem: Entrega confirmada para Artur Oliveira dos Reis no apartamento 501. Notificarei o morador.
+2025-04-16 00:00:12,274 - ai_service - INFO - Estado da chamada: Não especificado
+2025-04-16 00:00:12,274 - ai_service - INFO - ==================================================
+2025-04-16 00:00:12,274 - state_machine - INFO - Resposta da IA registrada: Entrega confirmada para Artur Oliveira dos Reis no apartamento 501. Notificarei o morador.
+2025-04-16 00:00:20,196 - audiosocket_handler - INFO - Áudio enviado completamente (111400 bytes)
+2025-04-16 00:00:20,699 - state_machine - INFO - Transição de estado: State.IA_TURN -> State.USER_TURN
+2025-04-16 00:00:20,700 - state_machine - INFO - *** IMPORTANTE: Transição de IA_TURN para USER_TURN - ativando escuta ***
+2025-04-16 00:00:20,700 - state_machine - INFO - Mensagem do sistema registrada: Sistema ativou escuta - aguardando fala do usuário
+2025-04-16 00:00:20,700 - state_machine - INFO - *** Sistema pronto para ouvir o usuário ***
+2025-04-16 00:00:20,701 - audiosocket_handler - INFO - Detecção de voz iniciada
+2025-04-16 00:00:22,712 - audiosocket_handler - INFO - Silêncio detectado por 2.0 segundos. Processando áudio.
+2025-04-16 00:00:22,712 - audiosocket_handler - INFO - Detectado segmento de fala completo, processando 323 frames
+2025-04-16 00:00:22,712 - audiosocket_handler - INFO - Mudando para estado WAITING para processamento de áudio
+2025-04-16 00:00:22,713 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.WAITING
+2025-04-16 00:00:25,295 - speech_service - INFO - Transcrição: Entrega confirmada para Artur Oliveira dos reis, no apartamento 501 notificarei o morador.
+2025-04-16 00:00:25,380 - state_machine - INFO - Transcrição do usuário registrada: Entrega confirmada para Artur Oliveira dos reis, no apartamento 501 notificarei o morador.
+2025-04-16 00:00:25,380 - state_machine - INFO - Transição de estado: State.WAITING -> State.IA_TURN
+2025-04-16 00:00:25,380 - state_machine - INFO - Saindo do estado WAITING para State.IA_TURN
+2025-04-16 00:00:25,381 - state_machine - INFO - Mensagem do sistema registrada: Estado alterado: WAITING -> IA_TURN
+2025-04-16 00:00:25,381 - ai_service - INFO - ==================================================
+2025-04-16 00:00:25,381 - ai_service - INFO - ENVIANDO REQUISIÇÃO PARA API
+2025-04-16 00:00:25,381 - ai_service - INFO - URL: http://127.0.0.1:8000/messages
+2025-04-16 00:00:25,381 - ai_service - INFO - ID da Conversa: fe098af1-d56f-4d5c-af42-5e01a93d2a11
+2025-04-16 00:00:25,381 - ai_service - INFO - Mensagem: Entrega confirmada para Artur Oliveira dos reis, no apartamento 501 notificarei o morador.
+2025-04-16 00:00:25,381 - ai_service - INFO - Payload completo: {
+  "id": "fe098af1-d56f-4d5c-af42-5e01a93d2a11",
   "content": "Entrega confirmada para Artur Oliveira dos reis, no apartamento 501 notificarei o morador."
 }
-2025-04-15 23:28:25,710 - ai_service - INFO - ==================================================
-2025-04-15 23:28:25,743 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages "HTTP/1.1 307 Temporary Redirect"
-2025-04-15 23:28:27,516 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages/ "HTTP/1.1 200 OK"
-2025-04-15 23:28:27,518 - ai_service - INFO - ==================================================
-2025-04-15 23:28:27,518 - ai_service - INFO - RESPOSTA DA API RECEBIDA (tempo: 1.78s)
-2025-04-15 23:28:27,518 - ai_service - INFO - Status: 200
-2025-04-15 23:28:27,518 - ai_service - INFO - Mensagem: Entrega confirmada para Artur Oliveira dos Reis no apartamento 501. Notificarei o morador.
-2025-04-15 23:28:27,518 - ai_service - INFO - Estado da chamada: Não especificado
-2025-04-15 23:28:27,518 - ai_service - INFO - ==================================================
-2025-04-15 23:28:27,519 - state_machine - INFO - Resposta da IA registrada: Entrega confirmada para Artur Oliveira dos Reis no apartamento 501. Notificarei o morador.
-2025-04-15 23:28:27,519 - audiosocket_handler - INFO - Resposta da IA: Entrega confirmada para Artur Oliveira dos Reis no apartamento 501. Notificarei o morador.
-2025-04-15 23:28:29,242 - audiosocket_handler - ERROR - Erro ao enviar áudio para o cliente: [Errno 32] Broken pipe
-2025-04-15 23:28:29,246 - audiosocket_handler - WARNING - Falha ao enviar áudio para o cliente
-2025-04-15 23:28:29,246 - state_machine - INFO - Transição de estado: State.IA_TURN -> State.USER_TURN
-2025-04-15 23:28:29,248 - audiosocket_handler - INFO - Detecção de voz iniciada
-2025-04-15 23:28:29,253 - audiosocket_handler - INFO - Recebido mensagem de Hangup
-2025-04-15 23:28:29,253 - state_machine - INFO - Conversa eb9e2651-c5e2-442a-b4a7-0855ab87af5b finalizada
-2025-04-15 23:28:29,253 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.STANDBY
-2025-04-15 23:28:29,253 - state_machine - INFO - Conversa None finalizada
-2025-04-15 23:28:29,253 - audiosocket_handler - INFO - Conexão com cliente ('127.0.0.1', 55092) fechada
+2025-04-16 00:00:25,381 - ai_service - INFO - ==================================================
+2025-04-16 00:00:25,420 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages "HTTP/1.1 307 Temporary Redirect"
+2025-04-16 00:00:29,699 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages/ "HTTP/1.1 200 OK"
+2025-04-16 00:00:29,700 - ai_service - INFO - ==================================================
+2025-04-16 00:00:29,700 - ai_service - INFO - RESPOSTA DA API RECEBIDA (tempo: 4.28s)
+2025-04-16 00:00:29,700 - ai_service - INFO - Status: 200
+2025-04-16 00:00:29,700 - ai_service - INFO - Mensagem: Entrega confirmada para Artur Oliveira dos Reis no apartamento 501. Notificarei o morador.
+2025-04-16 00:00:29,700 - ai_service - INFO - Estado da chamada: Não especificado
+2025-04-16 00:00:29,700 - ai_service - INFO - ==================================================
+2025-04-16 00:00:29,700 - state_machine - INFO - Resposta da IA registrada: Entrega confirmada para Artur Oliveira dos Reis no apartamento 501. Notificarei o morador.
+2025-04-16 00:00:37,683 - audiosocket_handler - INFO - Áudio enviado completamente (111400 bytes)
+2025-04-16 00:00:38,185 - state_machine - INFO - Transição de estado: State.IA_TURN -> State.USER_TURN
+2025-04-16 00:00:38,185 - state_machine - INFO - *** IMPORTANTE: Transição de IA_TURN para USER_TURN - ativando escuta ***
+2025-04-16 00:00:38,185 - state_machine - INFO - Mensagem do sistema registrada: Sistema ativou escuta - aguardando fala do usuário
+2025-04-16 00:00:38,185 - state_machine - INFO - *** Sistema pronto para ouvir o usuário ***
+2025-04-16 00:00:38,189 - audiosocket_handler - INFO - Detecção de voz iniciada
+2025-04-16 00:00:40,191 - audiosocket_handler - INFO - Silêncio detectado por 2.0 segundos. Processando áudio.
+2025-04-16 00:00:40,192 - audiosocket_handler - INFO - Detectado segmento de fala completo, processando 329 frames
+2025-04-16 00:00:40,192 - audiosocket_handler - INFO - Mudando para estado WAITING para processamento de áudio
+2025-04-16 00:00:40,192 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.WAITING
+2025-04-16 00:00:42,970 - speech_service - INFO - Transcrição: Entrega confirmada para Artur Oliveira dos reis, no apartamento 501 notificarei o morador.
+2025-04-16 00:00:43,168 - state_machine - INFO - Transcrição do usuário registrada: Entrega confirmada para Artur Oliveira dos reis, no apartamento 501 notificarei o morador.
+2025-04-16 00:00:43,169 - state_machine - INFO - Transição de estado: State.WAITING -> State.IA_TURN
+2025-04-16 00:00:43,169 - state_machine - INFO - Saindo do estado WAITING para State.IA_TURN
+2025-04-16 00:00:43,169 - state_machine - INFO - Mensagem do sistema registrada: Estado alterado: WAITING -> IA_TURN
+2025-04-16 00:00:43,169 - ai_service - INFO - ==================================================
+2025-04-16 00:00:43,169 - ai_service - INFO - ENVIANDO REQUISIÇÃO PARA API
+2025-04-16 00:00:43,169 - ai_service - INFO - URL: http://127.0.0.1:8000/messages
+2025-04-16 00:00:43,169 - ai_service - INFO - ID da Conversa: fe098af1-d56f-4d5c-af42-5e01a93d2a11
+2025-04-16 00:00:43,169 - ai_service - INFO - Mensagem: Entrega confirmada para Artur Oliveira dos reis, no apartamento 501 notificarei o morador.
+2025-04-16 00:00:43,169 - ai_service - INFO - Payload completo: {
+  "id": "fe098af1-d56f-4d5c-af42-5e01a93d2a11",
+  "content": "Entrega confirmada para Artur Oliveira dos reis, no apartamento 501 notificarei o morador."
+}
+2025-04-16 00:00:43,170 - ai_service - INFO - ==================================================
+2025-04-16 00:00:43,219 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages "HTTP/1.1 307 Temporary Redirect"
+2025-04-16 00:00:45,349 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages/ "HTTP/1.1 200 OK"
+2025-04-16 00:00:45,350 - ai_service - INFO - ==================================================
+2025-04-16 00:00:45,350 - ai_service - INFO - RESPOSTA DA API RECEBIDA (tempo: 2.15s)
+2025-04-16 00:00:45,350 - ai_service - INFO - Status: 200
+2025-04-16 00:00:45,350 - ai_service - INFO - Mensagem: Entrega confirmada para Artur Oliveira dos Reis no apartamento 501. Notificarei o morador.
+2025-04-16 00:00:45,350 - ai_service - INFO - Estado da chamada: Não especificado
+2025-04-16 00:00:45,350 - ai_service - INFO - ==================================================
+2025-04-16 00:00:45,350 - state_machine - INFO - Resposta da IA registrada: Entrega confirmada para Artur Oliveira dos Reis no apartamento 501. Notificarei o morador.
+2025-04-16 00:00:53,320 - audiosocket_handler - INFO - Áudio enviado completamente (111400 bytes)
+2025-04-16 00:00:53,823 - state_machine - INFO - Transição de estado: State.IA_TURN -> State.USER_TURN
+2025-04-16 00:00:53,824 - state_machine - INFO - *** IMPORTANTE: Transição de IA_TURN para USER_TURN - ativando escuta ***
+2025-04-16 00:00:53,824 - state_machine - INFO - Mensagem do sistema registrada: Sistema ativou escuta - aguardando fala do usuário
+2025-04-16 00:00:53,824 - state_machine - INFO - *** Sistema pronto para ouvir o usuário ***
+2025-04-16 00:00:53,825 - audiosocket_handler - INFO - Detecção de voz iniciada
+2025-04-16 00:00:55,837 - audiosocket_handler - INFO - Silêncio detectado por 2.0 segundos. Processando áudio.
+2025-04-16 00:00:55,837 - audiosocket_handler - INFO - Detectado segmento de fala completo, processando 348 frames
+2025-04-16 00:00:55,837 - audiosocket_handler - INFO - Mudando para estado WAITING para processamento de áudio
+2025-04-16 00:00:55,837 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.WAITING
+2025-04-16 00:00:58,678 - speech_service - INFO - Transcrição: Entrega confirmada para Artur Oliveira dos reis, no apartamento 501 notificarei o morador.
+2025-04-16 00:00:58,765 - state_machine - INFO - Transcrição do usuário registrada: Entrega confirmada para Artur Oliveira dos reis, no apartamento 501 notificarei o morador.
+2025-04-16 00:00:58,766 - state_machine - INFO - Transição de estado: State.WAITING -> State.IA_TURN
+2025-04-16 00:00:58,766 - state_machine - INFO - Saindo do estado WAITING para State.IA_TURN
+2025-04-16 00:00:58,766 - state_machine - INFO - Mensagem do sistema registrada: Estado alterado: WAITING -> IA_TURN
+2025-04-16 00:00:58,766 - ai_service - INFO - ==================================================
+2025-04-16 00:00:58,767 - ai_service - INFO - ENVIANDO REQUISIÇÃO PARA API
+2025-04-16 00:00:58,767 - ai_service - INFO - URL: http://127.0.0.1:8000/messages
+2025-04-16 00:00:58,767 - ai_service - INFO - ID da Conversa: fe098af1-d56f-4d5c-af42-5e01a93d2a11
+2025-04-16 00:00:58,767 - ai_service - INFO - Mensagem: Entrega confirmada para Artur Oliveira dos reis, no apartamento 501 notificarei o morador.
+2025-04-16 00:00:58,768 - ai_service - INFO - Payload completo: {
+  "id": "fe098af1-d56f-4d5c-af42-5e01a93d2a11",
+  "content": "Entrega confirmada para Artur Oliveira dos reis, no apartamento 501 notificarei o morador."
+}
+2025-04-16 00:00:58,776 - ai_service - INFO - ==================================================
+2025-04-16 00:00:58,837 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages "HTTP/1.1 307 Temporary Redirect"
+2025-04-16 00:01:00,697 - httpx - INFO - HTTP Request: POST http://127.0.0.1:8000/messages/ "HTTP/1.1 200 OK"
+2025-04-16 00:01:00,699 - ai_service - INFO - ==================================================
+2025-04-16 00:01:00,699 - ai_service - INFO - RESPOSTA DA API RECEBIDA (tempo: 1.88s)
+2025-04-16 00:01:00,699 - ai_service - INFO - Status: 200
+2025-04-16 00:01:00,699 - ai_service - INFO - Mensagem: Entrega confirmada para Artur Oliveira dos Reis no apartamento 501. Notificarei o morador.
+2025-04-16 00:01:00,699 - ai_service - INFO - Estado da chamada: Não especificado
+2025-04-16 00:01:00,699 - ai_service - INFO - ==================================================
+2025-04-16 00:01:00,699 - state_machine - INFO - Resposta da IA registrada: Entrega confirmada para Artur Oliveira dos Reis no apartamento 501. Notificarei o morador.
+2025-04-16 00:01:01,153 - audiosocket_handler - ERROR - Erro ao enviar áudio: [Errno 32] Broken pipe
+2025-04-16 00:01:01,153 - state_machine - INFO - Transição de estado: State.IA_TURN -> State.USER_TURN
+2025-04-16 00:01:01,153 - state_machine - INFO - *** IMPORTANTE: Transição de IA_TURN para USER_TURN - ativando escuta ***
+2025-04-16 00:01:01,154 - state_machine - INFO - Mensagem do sistema registrada: Sistema ativou escuta - aguardando fala do usuário
+2025-04-16 00:01:01,154 - state_machine - INFO - *** Sistema pronto para ouvir o usuário ***
+2025-04-16 00:01:01,155 - audiosocket_handler - INFO - Detecção de voz iniciada
+2025-04-16 00:01:01,156 - audiosocket_handler - INFO - Recebido mensagem de Hangup
+2025-04-16 00:01:01,156 - state_machine - INFO - Conversa fe098af1-d56f-4d5c-af42-5e01a93d2a11 finalizada
+2025-04-16 00:01:01,156 - state_machine - INFO - Transição de estado: State.USER_TURN -> State.STANDBY
+2025-04-16 00:01:01,156 - state_machine - INFO - Conversa None finalizada
+2025-04-16 00:01:01,156 - audiosocket_handler - INFO - Conexão com cliente ('127.0.0.1', 64838) fechada

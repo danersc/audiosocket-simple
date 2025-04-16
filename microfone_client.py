@@ -61,7 +61,7 @@ class AudioSocketClient:
         self.format = pyaudio.paInt16  # 16 bits por amostra
         
         # Configurações do buffer para reprodução mais suave
-        self.buffer_ms = 120     # Tamanho do buffer em milissegundos (120ms = 0.12s)
+        self.buffer_ms = 220     # Tamanho do buffer em milissegundos (220ms = 0.22s)
         self.buffer_chunks = int(self.buffer_ms / 20)  # Quantidade de chunks para bufferizar (20ms por chunk)
         self.min_buffer_size = self.chunk_size * self.buffer_chunks  # Tamanho mínimo do buffer em bytes
     
@@ -329,7 +329,7 @@ def main():
     parser = argparse.ArgumentParser(description="Cliente AudioSocket para captura de microfone")
     parser.add_argument('--host', default='127.0.0.1', help='Endereço do servidor AudioSocket')
     parser.add_argument('--port', type=int, default=8080, help='Porta do servidor AudioSocket')
-    parser.add_argument('--buffer', type=int, default=120, help='Tamanho do buffer de áudio em milissegundos (padrão: 120ms)')
+    parser.add_argument('--buffer', type=int, default=220, help='Tamanho do buffer de áudio em milissegundos (padrão: 220ms)')
     args = parser.parse_args()
     
     print("=== Cliente AudioSocket para Microfone ===")

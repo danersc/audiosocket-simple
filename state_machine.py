@@ -51,18 +51,27 @@ class StateMachine:
         """
         if new_state == self.current_state:
             # Já estamos nesse estado, não precisa fazer nada
+            logger.debug(f"Ignorando transição redundante para {new_state}")
             return
         
         old_state = self.current_state
         self.current_state = new_state
         logger.info(f"Transição de estado: {old_state} -> {new_state}")
         
-        # Se estamos saindo do estado WAITING, registra isso no log
-        if old_state == State.WAITING:
-            logger.info("Saindo do estado WAITING")
-            # Registramos uma mensagem do sistema para indicar a mudança de estado
-            self.registrar_transcricao_sistema(f"Estado alterado: {old_state.value} -> {new_state.value}")
+        # Adiciona lógica para o caso específico do IA_TURN -> USER_TURN
+        if old_state == State.IA_TURN and new_state == State.USER_TURN:
+            logger.info("*** IMPORTANTE: Transição de IA_TURN para USER_TURN - ativando escuta ***")
+            self.registrar_transcricao_sistema("Sistema ativou escuta - aguardando fala do usuário")
         
+        # Se estamos saindo do estado WAITING, registra isso no log
+        elif old_state == State.WAITING:
+            logger.info(f"Saindo do estado WAITING para {new_state}")
+            self.registrar_transcricao_sistema(f"Estado alterado: {old_state.value} -> {new_state.value}")
+            
+        # Se estamos indo para o estado USER_TURN, registra isso no log
+        if new_state == State.USER_TURN:
+            logger.info("*** Sistema pronto para ouvir o usuário ***")
+            
         # Executa callbacks registrados para este estado
         for callback in self.state_change_callbacks.get(new_state, []):
             try:
