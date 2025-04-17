@@ -9,3 +9,7 @@ fastapi
 uvicorn[standard]
 jinja2
 pydantic
+crewai==0.108.0
+crewai-tools==0.38.1
+redis==5.2.1
+guardrails-ai==0.6.5
