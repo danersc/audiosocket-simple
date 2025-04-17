@@ -139,9 +139,9 @@ async def iniciar_servidor_audiosocket(reader, writer, state_machine):
         await enviar_audio(writer, greeting_audio, origem="Greeting")
         await asyncio.sleep(0.5)
 
+    # ✅ Alteração chave aqui: a transição para USER_TURN ocorre APENAS após envio completo do áudio
     state_machine.transition_to(State.USER_TURN)
 
-    # Adiciona a tarefa de monitoramento do WAITING independentemente
     await asyncio.gather(
         receber_audio(reader, state_machine, audio_queue),
         processar_audio(audio_queue, vad, state_machine, writer),
