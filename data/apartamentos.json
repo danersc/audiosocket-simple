@@ -1,0 +1,52 @@
+[
+  {
+    "apartment_number": "101",
+    "residents": ["Ana Beatriz Silva", "João Pedro Silva"],
+    "voip_number": "sip:101@condominio.local"
+  },
+  {
+    "apartment_number": "102",
+    "residents": ["Carlos Oliveira"],
+    "voip_number": "sip:102@condominio.local"
+  },
+  {
+    "apartment_number": "201",
+    "residents": ["Fernanda Souza", "Tiago Souza"],
+    "voip_number": "sip:201@condominio.local"
+  },
+  {
+    "apartment_number": "202",
+    "residents": ["Mariana Costa"],
+    "voip_number": "sip:202@condominio.local"
+  },
+  {
+    "apartment_number": "301",
+    "residents": ["Rodrigo Lima", "Letícia Lima"],
+    "voip_number": "sip:301@condominio.local"
+  },
+  {
+    "apartment_number": "302",
+    "residents": ["Lucas Martins"],
+    "voip_number": "sip:302@condominio.local"
+  },
+  {
+    "apartment_number": "401",
+    "residents": ["Paula Fernandes"],
+    "voip_number": "sip:401@condominio.local"
+  },
+  {
+    "apartment_number": "402",
+    "residents": ["Eduardo Almeida", "Bruna Almeida"],
+    "voip_number": "sip:402@condominio.local"
+  },
+  {
+    "apartment_number": "501",
+    "residents": ["Renata Oliveira", "Daner dos Reis"],
+    "voip_number": "1003035"
+  },
+  {
+    "apartment_number": "502",
+    "residents": ["Vinícius Barros", "Marina Barros"],
+    "voip_number": "sip:502@condominio.local"
+  }
+]

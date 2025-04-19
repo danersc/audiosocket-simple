@@ -18,7 +18,7 @@ INTENT_SCHEMA = """
     <string name="mensagem" description="Mensagem a ser enviada ao usuário, clara e objetiva"/>
     <object name="dados">
       <string name="intent_type" format="enum" enum-values="visita,entrega,desconhecido"/>
-      <string name="visitor_name" on-fail-soft="noop"/>
+      <string name="interlocutor_name" on-fail-soft="noop"/>
       <string name="apartment_number" on-fail-soft="noop"/>
       <string name="resident_name" on-fail-soft="noop"/>
     </object>
@@ -53,7 +53,7 @@ def extract_intent_from_response(response: str) -> Dict:
         # Cálculo de completude
         campos_preenchidos = all([
             intent.intent_type != IntentType.DESCONHECIDO,
-            intent.visitor_name.strip(),
+            intent.interlocutor_name.strip(),
             intent.apartment_number.strip(),
             intent.resident_name.strip()
         ])
@@ -78,7 +78,7 @@ def extract_intent_from_response(response: str) -> Dict:
                 "mensagem": "Não foi possível identificar sua intenção e seu nome, por favor, me informe seu nome e o que deseja.",
                 "dados": {
                     "intent_type": "",
-                    "visitor_name": "",
+                    "interlocutor_name": "",
                     "apartment_number": "",
                     "resident_name": "",
                     "set_call_status": "USER_TURN"

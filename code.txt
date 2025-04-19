@@ -19,9 +19,14 @@ audio_utils.py
 audiosocket_handler.py
 code_gpt.py
 config.json
+data/
+    apartamentos.json
 main.py
 microfone_client.py
 requirements.txt
+services/
+    __init__.py
+    amqp_service.py
 speech_service.py
 state_machine.py
 
@@ -88,19 +93,53 @@ import os
 KIND_SLIN = 0x10
 logger = logging.getLogger(__name__)
 
+
+async def limpar_buffer_reader(reader):
+    """
+    Esvazia o buffer do reader imediatamente, evitando dados antigos acumulados.
+    """
+    total_bytes_descartados = 0
+    try:
+        while not reader.at_eof():
+            data = await asyncio.wait_for(reader.read(1024), timeout=0.01)
+            if not data:
+                break
+            total_bytes_descartados += len(data)
+            logger.debug(f"Limpando buffer: {len(data)} bytes descartados.")
+    except (asyncio.TimeoutError, asyncio.IncompleteReadError):
+        pass
+
+    logger.info(f"Total descartado nesta limpeza do buffer: {total_bytes_descartados} bytes")
+    return total_bytes_descartados
+
 async def receber_audio(reader, state_machine, audio_queue):
     try:
         while True:
+            if not state_machine.is_user_turn():
+                # Fora do USER_TURN: mantenha o buffer limpo constantemente
+                bytes_descartados = await limpar_buffer_reader(reader)
+                logger.info(f"[BUFFER LIMPEZA] Bytes descartados: {bytes_descartados}")
+                await asyncio.sleep(0.01)  # Intervalo curto para não sobrecarregar CPU
+                continue
+
+            # Se chegou aqui, é USER_TURN: leia normalmente
             header = await reader.readexactly(3)
             kind = header[0]
             length = int.from_bytes(header[1:3], 'big')
             audio_chunk = await reader.readexactly(length)
-            if kind == KIND_SLIN and len(audio_chunk) == 320 and state_machine.is_user_turn():
+
+            logger.info(f"[BUFFER LEITURA] Chunk recebido (USER_TURN): {len(audio_chunk)} bytes")
+
+            if kind == KIND_SLIN and len(audio_chunk) == 320:
                 await audio_queue.put(audio_chunk)
+            else:
+                logger.warning(f"Chunk inválido recebido: kind={kind}, length={len(audio_chunk)}")
+
     except asyncio.IncompleteReadError:
         logger.info("Cliente desconectado")
     except Exception as e:
         logger.error(f"Erro ao receber áudio: {e}")
+
 
 async def enviar_audio(writer, dados_audio, origem="desconhecida"):
     logger.info(f"Iniciando envio de áudio sintetizado (origem: {origem}), tamanho total: {len(dados_audio)} bytes")
@@ -170,8 +209,6 @@ async def processar_audio(audio_queue, vad, state_machine, writer):
 
                 if audio_data:
                     state_machine.transition_to(State.WAITING)
-                    logger.info("Áudio capturado completo, iniciando transcrição.")
-
                     texto = await transcrever_audio_async(audio_data)
 
                     if not texto:
@@ -179,46 +216,41 @@ async def processar_audio(audio_queue, vad, state_machine, writer):
                         state_machine.transition_to(State.USER_TURN)
                         continue
 
-                    logger.info(f"Texto transcrito: {texto}")
-
                     resposta = await enviar_mensagem_para_ia(texto, state_machine.get_conversation_id())
+                    # está falhando aqui:
                     mensagem = extrair_mensagem_da_resposta(resposta)
                     proximo_estado = obter_estado_chamada(resposta)
-
-                    logger.info(f"Mensagem recebida da IA: {mensagem}")
-                    logger.info(f"Estado sugerido pela API: {proximo_estado}")
 
                     if mensagem:
                         audio_resposta = await sintetizar_fala_async(mensagem)
                         if audio_resposta and len(audio_resposta) > 0:
                             state_machine.transition_to(State.IA_TURN)
-                            logger.info("Enviando áudio sintetizado ao usuário.")
                             await enviar_audio(writer, audio_resposta, origem="IA Response")
                             await asyncio.sleep(0.5)
-                        else:
-                            logger.warning("Resposta de áudio vazia.")
 
                     if proximo_estado:
-                        logger.info(f"Aplicando estado '{proximo_estado}' após envio completo do áudio.")
                         state_machine.transition_to(State[proximo_estado])
                     else:
                         state_machine.transition_to(State.USER_TURN)
 
-async def iniciar_servidor_audiosocket(reader, writer, state_machine):
+async def iniciar_servidor_audiosocket_visitante(reader, writer, state_machine, call_id):
     vad = webrtcvad.Vad(2)
     audio_queue = asyncio.Queue()
     caminho_audio_espera = os.path.join('audio', 'waiting.slin')
 
-    logger.info("Iniciando síntese de áudio para mensagem de saudação.")
-    greeting_audio = await sintetizar_fala_async("Condomínio Apoena, em que posso ajudar?")
+    logger.info(f"[VISITANTE] Iniciando atendimento. Call ID: {call_id}")
+
+    greeting_audio = await sintetizar_fala_async("Condomínio Apoena, por favor informe o que deseja, se entrega ou visita.")
     if greeting_audio:
         state_machine.transition_to(State.IA_TURN)
-        logger.info("Enviando áudio da mensagem inicial ao cliente.")
         await enviar_audio(writer, greeting_audio, origem="Greeting")
         await asyncio.sleep(0.5)
 
-    # ✅ Alteração chave aqui: a transição para USER_TURN ocorre APENAS após envio completo do áudio
     state_machine.transition_to(State.USER_TURN)
+
+    await limpar_buffer_reader(reader)
+
+    logger.info(f"[STATUS] Aplicando estado 'USER_TURN'")
 
     await asyncio.gather(
         receber_audio(reader, state_machine, audio_queue),
@@ -226,23 +258,262 @@ async def iniciar_servidor_audiosocket(reader, writer, state_machine):
         monitorar_waiting(state_machine, writer, caminho_audio_espera)
     )
 
+async def iniciar_servidor_audiosocket_morador(reader, writer, state_machine, call_id):
+    vad = webrtcvad.Vad(2)
+    audio_queue = asyncio.Queue()
+
+    logger.info(f"[MORADOR] Iniciando atendimento. Call ID: {call_id}")
+
+    # TODO A partir do ID, buscar uma mensagem para o morador (Pode ser uma pergunta sobre se autoriza ou não o visitante a entrar)
+    mensagem_para_morador = None#obter_mensagem_para_morador(call_id)
+    if not mensagem_para_morador:
+        mensagem_para_morador = "Olá, você recebeu uma solicitação no interfone. Autoriza?"
+
+    audio_mensagem = await sintetizar_fala_async(mensagem_para_morador)
+    if audio_mensagem:
+        state_machine.transition_to(State.IA_TURN)
+        await enviar_audio(writer, audio_mensagem, origem="Mensagem para Morador")
+        await asyncio.sleep(0.5)
+
+    state_machine.transition_to(State.USER_TURN)
+
+    await limpar_buffer_reader(reader)
+
+    # TODO Adicionar tratamento a partir da resposta do morador
+    # await asyncio.gather(
+    #     receber_audio_morador(reader, state_machine, audio_queue, call_id),
+    #     processar_audio_morador(audio_queue, vad, state_machine, writer, call_id)
+    # )
+
 
 requirements.txt:
+aiohappyeyeballs==2.6.1
+aiohttp==3.11.16
+aiosignal==1.3.2
+alembic==1.15.2
+annotated-types==0.7.0
+anyio==4.9.0
+appdirs==1.4.4
+arrow==1.3.0
+asgiref==3.8.1
+asttokens==3.0.0
+asyncio==3.4.3
+attrs==25.3.0
+auth0-python==4.7.2
 azure-cognitiveservices-speech==1.41.1
-httpx==0.27.2
-pydub==0.25.1
-python-dotenv==1.0.1
-webrtcvad==2.0.10
-asyncio
-typing_extensions
-fastapi
-uvicorn[standard]
-jinja2
-pydantic
+backoff==2.2.1
+bcrypt==4.3.0
+beautifulsoup4==4.13.4
+blinker==1.9.0
+build==1.2.2.post1
+cachetools==5.5.2
+certifi==2025.1.31
+cffi==1.17.1
+charset-normalizer==3.4.1
+chroma-hnswlib==0.7.6
+chromadb==0.5.23
+click==8.1.8
+cohere==5.15.0
+colorama==0.4.6
+coloredlogs==15.0.1
 crewai==0.108.0
 crewai-tools==0.38.1
-redis==5.2.1
+cryptography==43.0.3
+dataclasses-json==0.6.7
+decorator==5.2.1
+Deprecated==1.2.18
+deprecation==2.1.0
+diff-match-patch==20230430
+distro==1.9.0
+docker==7.1.0
+docstring_parser==0.16
+durationpy==0.9
+embedchain==0.1.128
+et_xmlfile==2.0.0
+executing==2.2.0
+Faker==25.9.2
+fastapi==0.115.9
+fastavro==1.10.0
+filelock==3.18.0
+flatbuffers==25.2.10
+fqdn==1.5.1
+frozenlist==1.5.0
+fsspec==2025.3.2
+google-auth==2.39.0
+googleapis-common-protos==1.70.0
+gptcache==0.1.44
+griffe==0.36.9
+grpcio==1.71.0
+grpcio-tools==1.71.0
 guardrails-ai==0.6.5
+guardrails-api-client==0.4.0a1
+guardrails_hub_types==0.0.4
+h11==0.14.0
+h2==4.2.0
+hpack==4.1.0
+httpcore==1.0.8
+httptools==0.6.4
+httpx==0.27.2
+httpx-sse==0.4.0
+huggingface-hub==0.30.2
+humanfriendly==10.0
+hyperframe==6.1.0
+idna==3.10
+importlib_metadata==8.6.1
+importlib_resources==6.5.2
+instructor==1.7.9
+ipython==9.1.0
+ipython_pygments_lexers==1.1.1
+isoduration==20.11.0
+jedi==0.19.2
+Jinja2==3.1.6
+jiter==0.8.2
+json5==0.12.0
+json_repair==0.41.1
+jsonpatch==1.33
+jsonpickle==4.0.5
+jsonpointer==3.0.0
+jsonref==1.1.0
+jsonschema==4.23.0
+jsonschema-specifications==2024.10.1
+kubernetes==32.0.1
+lancedb==0.21.2
+langchain==0.3.23
+langchain-cohere==0.3.5
+langchain-community==0.3.21
+langchain-core==0.3.52
+langchain-experimental==0.3.4
+langchain-openai==0.2.14
+langchain-text-splitters==0.3.8
+langsmith==0.3.31
+litellm==1.60.2
+lxml==4.9.4
+Mako==1.3.10
+markdown-it-py==3.0.0
+MarkupSafe==3.0.2
+marshmallow==3.26.1
+matplotlib-inline==0.1.7
+mdurl==0.1.2
+mem0ai==0.1.91
+mmh3==5.1.0
+monotonic==1.6
+mpmath==1.3.0
+multidict==6.4.3
+mypy-extensions==1.0.0
+networkx==3.4.2
+nodeenv==1.9.1
+numpy==2.2.4
+oauthlib==3.2.2
+onnxruntime==1.21.0
+openai==1.75.0
+openpyxl==3.1.5
+opentelemetry-api==1.32.1
+opentelemetry-exporter-otlp-proto-common==1.32.1
+opentelemetry-exporter-otlp-proto-grpc==1.32.1
+opentelemetry-exporter-otlp-proto-http==1.32.1
+opentelemetry-instrumentation==0.53b1
+opentelemetry-instrumentation-asgi==0.53b1
+opentelemetry-instrumentation-fastapi==0.53b1
+opentelemetry-proto==1.32.1
+opentelemetry-sdk==1.32.1
+opentelemetry-semantic-conventions==0.53b1
+opentelemetry-util-http==0.53b1
+orjson==3.10.16
+overrides==7.7.0
+packaging==24.2
+pandas==2.2.3
+parso==0.8.4
+pdfminer.six==20250327
+pdfplumber==0.11.6
+pexpect==4.9.0
+pika==1.3.2
+pillow==11.2.1
+portalocker==2.10.1
+posthog==3.25.0
+prompt_toolkit==3.0.51
+propcache==0.3.1
+protobuf==5.29.4
+psycopg2-binary==2.9.10
+ptyprocess==0.7.0
+pure_eval==0.2.3
+pyarrow==19.0.1
+pyasn1==0.6.1
+pyasn1_modules==0.4.2
+PyAudio==0.2.14
+pycparser==2.22
+pydantic==2.11.3
+pydantic-settings==2.8.1
+pydantic_core==2.33.1
+pydash==7.0.7
+pydub==0.25.1
+Pygments==2.19.1
+PyJWT==2.10.1
+pypdf==5.4.0
+pypdfium2==4.30.1
+PyPika==0.48.9
+pyproject_hooks==1.2.0
+pyright==1.1.399
+pysbd==0.3.4
+python-dateutil==2.9.0.post0
+python-dotenv==1.0.1
+pytube==15.0.0
+pytz==2024.2
+pyvis==0.3.2
+PyYAML==6.0.2
+qdrant-client==1.13.3
+redis==5.2.1
+referencing==0.36.2
+regex==2024.11.6
+requests==2.32.3
+requests-oauthlib==2.0.0
+requests-toolbelt==1.0.0
+rfc3339-validator==0.1.4
+rfc3986-validator==0.1.1
+rich==13.9.4
+rpds-py==0.24.0
+rsa==4.9.1
+rstr==3.2.2
+schema==0.7.7
+semver==3.0.4
+shellingham==1.5.4
+six==1.17.0
+sniffio==1.3.1
+soupsieve==2.6
+SQLAlchemy==2.0.40
+stack-data==0.6.3
+starlette==0.45.3
+sympy==1.13.3
+tabulate==0.9.0
+tenacity==9.1.2
+tiktoken==0.9.0
+tokenizers==0.20.3
+tomli==2.2.1
+tomli_w==1.2.0
+tqdm==4.66.5
+traitlets==5.14.3
+typer==0.15.2
+types-python-dateutil==2.9.0.20241206
+types-requests==2.32.0.20250328
+typing-inspect==0.9.0
+typing-inspection==0.4.0
+typing_extensions==4.12.2
+tzdata==2025.2
+uri-template==1.3.0
+urllib3==2.0.7
+uv==0.6.14
+uvicorn==0.34.1
+uvloop==0.21.0
+watchfiles==1.0.5
+wcwidth==0.2.13
+webcolors==24.11.1
+webrtcvad==2.0.10
+websocket-client==1.8.0
+websockets==12.0
+wrapt==1.17.2
+wsproto==1.2.0
+yarl==1.20.0
+zipp==3.21.0
+zstandard==0.23.0
 
 
 config.json:
@@ -725,59 +996,110 @@ if __name__ == "__main__":
 
 
 main.py:
+
 import asyncio
 import logging
 from dotenv import load_dotenv
 from state_machine import StateMachine
-from audiosocket_handler import iniciar_servidor_audiosocket
+from audiosocket_handler import (
+    iniciar_servidor_audiosocket_visitante,
+    iniciar_servidor_audiosocket_morador
+)
 
 load_dotenv()
-logging.basicConfig(level=logging.INFO)
+# logging.basicConfig(level=logging.INFO)
 
-async def handle_client(reader, writer):
+logging.config.dictConfig({
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'default': {
+            'format': '[%(asctime)s] %(levelname)s [%(name)s]: %(message)s',
+            'datefmt': '%Y-%m-%d %H:%M:%S',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'default',
+            'level': 'INFO',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
+})
+
+async def handle_client_visitante(reader, writer):
     state_machine = StateMachine()
     state_machine.start_new_conversation()
 
-    # Lendo a mensagem inicial KIND_ID (esperado pelo cliente)
     try:
         header = await reader.readexactly(3)
         kind = header[0]
         length = int.from_bytes(header[1:3], "big")
         call_id = await reader.readexactly(length)
 
-        if kind != 0x01:  # KIND_ID
-            logging.error("Mensagem inicial não é KIND_ID. Fechando conexão.")
+        if kind != 0x01:
+            logging.error("Mensagem inicial inválida.")
             writer.close()
             await writer.wait_closed()
             return
 
-        logging.info(f"Recebido Call ID: {call_id.hex()}")
+        logging.info(f"[VISITANTE] Recebido Call ID: {call_id.hex()}")
 
-        # Agora iniciar o servidor audio socket normalmente
-        await iniciar_servidor_audiosocket(reader, writer, state_machine)
+        await iniciar_servidor_audiosocket_visitante(reader, writer, state_machine, call_id.hex())
 
-    except asyncio.IncompleteReadError:
-        logging.error("Cliente desconectado inesperadamente.")
     except Exception as e:
-        logging.error(f"Erro inesperado: {e}")
+        logging.error(f"[VISITANTE] Erro: {e}")
+    finally:
+        writer.close()
+        await writer.wait_closed()
+
+async def handle_client_morador(reader, writer):
+    state_machine = StateMachine()
+
+    try:
+        header = await reader.readexactly(3)
+        kind = header[0]
+        length = int.from_bytes(header[1:3], "big")
+        call_id = await reader.readexactly(length)
+
+        if kind != 0x01:
+            logging.error("Mensagem inicial inválida.")
+            writer.close()
+            await writer.wait_closed()
+            return
+
+        logging.info(f"[MORADOR] Recebido Call ID: {call_id.hex()}")
+
+        await iniciar_servidor_audiosocket_morador(reader, writer, state_machine, call_id.hex())
+
+    except Exception as e:
+        logging.error(f"[MORADOR] Erro: {e}")
     finally:
         writer.close()
         await writer.wait_closed()
 
 async def main():
-    server = await asyncio.start_server(handle_client, '127.0.0.1', 8080)
-    logging.info("Servidor AudioSocket rodando em 127.0.0.1:8080")
-    async with server:
-        try:
-            await server.serve_forever()
-        except asyncio.CancelledError:
-            logging.info("Servidor está sendo encerrado.")
+    server_visitante = await asyncio.start_server(handle_client_visitante, '127.0.0.1', 8080)
+    server_morador = await asyncio.start_server(handle_client_morador, '127.0.0.1', 8081)
+
+    logging.info("AudioSocket VISITANTE rodando em 127.0.0.1:8080")
+    logging.info("AudioSocket MORADOR rodando em 127.0.0.1:8081")
+
+    async with server_visitante, server_morador:
+        await asyncio.gather(
+            server_visitante.serve_forever(),
+            server_morador.serve_forever()
+        )
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("Servidor encerrado manualmente.")
+        print("Servidores encerrados manualmente.")
 
 
 speech_service.py:
@@ -850,7 +1172,8 @@ def clear_user_state(user_id: str):
 
 ai/tasks.py:
 from crewai import Task
-from ai.agents import create_conversation_coordinator_agent, create_conversation_monitor_agent
+from ai.agents import (create_conversation_coordinator_agent, create_conversation_monitor_agent,
+                       identificator_person_agent, identificator_intent_agent, identificator_resident_apartment_agent)
 
 
 def create_conversation_coordinator_task(user_message: str, conversation_history: str, intent: dict) -> Task:
@@ -873,7 +1196,7 @@ def create_conversation_coordinator_task(user_message: str, conversation_history
         Seu trabalho:
         - Verificar se todos os campos estão preenchidos:
           • intent_type
-          • visitor_name
+          • interlocutor_name
           • apartment_number
           • resident_name
         - Se faltar algo, pergunte o que falta.
@@ -897,14 +1220,14 @@ def create_conversation_coordinator_task(user_message: str, conversation_history
         - mensagem: mensagem de resposta clara e objetiva para o usuário, podendo ser a confirmação final. 
         Confirme a ação de forma educada, objetiva e breve. Ex, "Entrega confirmada para Fulano no xxxx. Notificarei o 
         morador"., ou ainda, "Entendido, vou avisar Cicrano no apartamento bla bla bla."
-        - dados: objeto com os campos intent_type, visitor_name, apartment_number e resident_name.
+        - dados: objeto com os campos intent_type, interlocutor_name, apartment_number e resident_name.
         
         Exemplo:
         {
           "mensagem": "Entrega confirmada para Fulano do XXXX.",
           "dados": {
             "intent_type": "entrega",
-            "visitor_name": "João",
+            "interlocutor_name": "João",
             "apartment_number": "XXXX",
             "resident_name": "Fulano"
           }
@@ -920,7 +1243,7 @@ def create_conversation_coordinator_task(user_message: str, conversation_history
           "mensagem": "Informe o que deseja",
           "dados": {
             "intent_type": "",
-            "visitor_name": "",
+            "interlocutor_name": "",
             "apartment_number": "",
             "resident_name": ""
           }
@@ -930,7 +1253,7 @@ def create_conversation_coordinator_task(user_message: str, conversation_history
           "mensagem": "Por favor, me informe o nome do visitante, o apartamento e o nome do morador que autorizou",
           "dados": {
             "intent_type": "visita",
-            "visitor_name": "",
+            "interlocutor_name": "",
             "apartment_number": "",
             "resident_name": ""
           }
@@ -940,7 +1263,7 @@ def create_conversation_coordinator_task(user_message: str, conversation_history
           "mensagem": "Por favor, me informe o seu nome, o apartamento e o nome do morador que vai receber a entrega",
           "dados": {
             "intent_type": "entrega",
-            "visitor_name": "",
+            "interlocutor_name": "",
             "apartment_number": "",
             "resident_name": ""
           }
@@ -950,7 +1273,7 @@ def create_conversation_coordinator_task(user_message: str, conversation_history
           "mensagem": "Por favor, me informe o nome do morador.",
           "dados": {
             "intent_type": "entrega",
-            "visitor_name": "Carlos",
+            "interlocutor_name": "Carlos",
             "apartment_number": "301",
             "resident_name": ""
           }
@@ -960,7 +1283,7 @@ def create_conversation_coordinator_task(user_message: str, conversation_history
           "mensagem": "Por favor, me informe sua intenção",
           "dados": {
             "intent_type": "",
-            "visitor_name": "Carlos",
+            "interlocutor_name": "Carlos",
             "apartment_number": "301",
             "resident_name": "Fulano"
           }
@@ -970,7 +1293,7 @@ def create_conversation_coordinator_task(user_message: str, conversation_history
           "mensagem": "Podes informar o seu nome?",
           "dados": {
             "intent_type": "visita",
-            "visitor_name": "",
+            "interlocutor_name": "",
             "apartment_number": "301",
             "resident_name": "Fulano"
           }
@@ -980,7 +1303,7 @@ def create_conversation_coordinator_task(user_message: str, conversation_history
           "mensagem": "Podes informar o número do apartamento?",
           "dados": {
             "intent_type": "visita",
-            "visitor_name": "Cicrano",
+            "interlocutor_name": "Cicrano",
             "apartment_number": "",
             "resident_name": "Fulano"
           }
@@ -992,9 +1315,189 @@ def create_conversation_coordinator_task(user_message: str, conversation_history
     )
 
 
+def conversation_extractor_name_task(user_message: str, conversation_history: str, intent: dict) -> Task:
+    agent = identificator_person_agent()
+    print(conversation_history)
+    return Task(
+        description=f"""
+        Você é o concierge inicial virtual do condomínio em uma conversa com alguém no portão do condomínio.
+
+        Histórico da conversa:
+        {conversation_history}
+
+        Mensagem nova:
+        "{user_message}"
+
+        Intenção acumulada até agora:
+        {intent}
+
+        Seu trabalho:
+        - Verificar se o campo interlocutor_name está preenchido:
+          • interlocutor_name
+        - Se não souber o nome da pessoa, pergunte
+        - Se estiver completo, com um nome legível e aceitável, apenas confirme.
+
+        Regras:
+        - NÃO repita o que já foi dito.
+        - NÃO reinicie a conversa.
+        - Não peça dados que já estão no identificados.
+        """,
+        expected_output=""""
+        Responda em formato JSON onde o campo interlocutor_name deve estar preenchido com o nome do visitante. 
+        O campo de intent_type também deve estar preenchido pois já perguntamos isso ao interlocutor. Os outros
+        campos (apartment_number e resident_name) dentro de dados serão preenchidos pelos outros concierges. 
+        Exemplo de mensagem quando ainda não foi identificado o nome:
+        {
+          "mensagem": "Por favor, me informe o seu nome",
+          "dados": {
+            "intent_type": "",
+            "interlocutor_name": "",
+            "apartment_number": "",
+            "resident_name": ""
+          }
+        }
+        
+        Exemplo de mensagem quando foi identificado o nome:
+        {
+          "mensagem": "Obrigado Fulano, aguarde um instante",
+          "dados": {
+            "intent_type": "",
+            "interlocutor_name": "Fulano",
+            "apartment_number": "",
+            "resident_name": ""
+          }
+        }
+        """,
+        agent=agent
+    )
+
+
+def conversation_extractor_intent_task(user_message: str, conversation_history: str, intent: dict) -> Task:
+    agent = identificator_intent_agent()
+    print(conversation_history)
+    return Task(
+        description=f"""
+        Você é o concierge virtual primário do condomínio em uma conversa com alguém no portão do condomínio.
+
+        Histórico da conversa:
+        {conversation_history}
+
+        Mensagem nova:
+        "{user_message}"
+
+        Intenção acumulada até agora:
+        {intent}
+
+        Seu trabalho:
+        - Verificar se o campo intent_type está preenchido:
+          • intent_type
+        - Se não souber a intenção da pessoa, pergunte.
+        - Se estiver completo, com a intenção identificada entre entrega e visita, apenas confirme.
+
+        Regras:
+        - NÃO repita o que já foi dito.
+        - NÃO reinicie a conversa.
+        - Não peça dados que já estão no identificados.
+        """,
+        expected_output=""""
+        Responda em formato JSON onde o campo intent_type deve estar preenchido com a intenção do visitante. Os outros
+        campos dentro de dados serão preenchidos pelos outros concierges.
+        Mesmo que o usuário diga outras informações, ignore informações como o apartamento e o nome do morador, 
+        apenas retorne a intenção (intent_type).
+
+        Exemplo de mensagem quando ainda não foi identificadoa a intenção:
+        {
+          "mensagem": "Por favor, me informe sua intenção, se visita ou entrega",
+          "dados": {
+            "intent_type": "",
+            "interlocutor_name": "Fulano",
+            "apartment_number": "",
+            "resident_name": ""
+          }
+        }
+
+        Exemplo de mensagem quando foi identificada a intenção:
+        {
+          "mensagem": "Obrigado Fulano, aguarde um instante",
+          "dados": {
+            "intent_type": "visita",
+            "interlocutor_name": "Fulano",
+            "apartment_number": "",
+            "resident_name": ""
+          }
+        }
+        """,
+        agent=agent
+    )
+
+
+def conversation_extractor_resident_apartment_task(user_message: str, conversation_history: str, intent: dict) -> Task:
+    agent = identificator_resident_apartment_agent()
+    print(conversation_history)
+    return Task(
+        description=f"""
+        Você é o concierge virtual terciário em uma conversa com alguém no portão do condomínio.
+
+        Histórico da conversa:
+        {conversation_history}
+
+        Mensagem nova:
+        "{user_message}"
+
+        Intenção acumulada até agora:
+        {intent}
+
+        Seu trabalho:
+        - Verificar se os campos apartment_number e resident_name estão preenchidos:
+          • apartment_number
+          • resident_name
+        - Se não souber o apartamento ou o morador, pergunte
+        - Se estiver completo, com o apartamento e o nome do morador, apenas confirme.
+
+        Regras:
+        - NÃO repita o que já foi dito.
+        - NÃO reinicie a conversa.
+        - Não peça dados que já estão no identificados.
+        """,
+        expected_output=""""
+        Responda em formato JSON onde os campos apartment_number e resident_name devem estar preenchidos com o
+        número do apartamento e nome do morador. Os outros campos serão preenchidos pelos outros concierges.
+
+        Exemplo de mensagem quando ainda não foi identificado o apartamento ou o morador:
+        {
+          "mensagem": "Por favor, me informe sua para qual apartamento e o nome do morador",
+          "dados": {
+            "intent_type": "visita",
+            "interlocutor_name": "Fulano",
+            "apartment_number": "",
+            "resident_name": ""
+          }
+        }
+
+        Exemplo de mensagem quando foi identificado o apartamento e o morador:
+        {
+          "mensagem": "Obrigado Fulano, aguarde um instante",
+          "dados": {
+            "intent_type": "visita",
+            "interlocutor_name": "Fulano",
+            "apartment_number": "501",
+            "resident_name": "Cicrano"
+          }
+        }
+        """,
+        agent=agent
+    )
+
+
 ai/tools.py:
+from rapidfuzz import fuzz
+import json
+from pathlib import Path
+from typing import Dict
+from ai.models.intent import IntentData
 from crewai.tools import tool
 
+VALID_APT_PATH = Path("data/apartamentos.json")
 
 @tool("SendMessageTool")
 def identify_user_intent(message: str) -> str:
@@ -1005,12 +1508,136 @@ def identify_user_intent(message: str) -> str:
     return message
 
 
+# @tool("ValidarIntentComFuzzyTool")
+def validar_intent_com_fuzzy(intent: Dict) -> Dict:
+    """
+    Verifica se a combinação apartment_number e resident_name da intent
+    corresponde (mesmo que parcialmente) a um morador real.
+
+    Retorna um dicionário:
+    {
+      "status": "válido" ou "inválido",
+      "match_name": "Fulano de Tal",
+      "voip_number": "1003031"
+    }
+    """
+    try:
+        apt = intent.get("apartment_number", "").strip().lower()  # 'apartment_number
+        resident_informado = intent.get("resident_name", "").strip().lower()
+
+        if not apt or not resident_informado:
+            return {
+                "status": "inválido",
+                "reason": "Faltando número do apartamento ou nome do morador"
+            }
+
+        with open(VALID_APT_PATH, "r", encoding="utf-8") as f:
+            apartamentos = json.load(f)
+
+        for apartamento in apartamentos:
+            if apartamento["apartment_number"] != apt:
+                continue
+
+            for residente in apartamento["residents"]:
+                nome_residente = residente.strip().lower()
+                score = fuzz.partial_ratio(resident_informado, nome_residente)
+
+                if score >= 85:
+                    return {
+                        "status": "válido",
+                        "match_name": residente,
+                        "voip_number": apartamento["voip_number"]
+                    }
+
+        return {
+            "status": "inválido",
+            "reason": "Morador não encontrado neste apartamento"
+        }
+    except Exception as e:
+        return {
+            "status": "erro",
+            "message": str(e)
+        }
+
+
 ai/__init__.py:
 
 
 ai/agents.py:
 import os
 from crewai import Agent
+
+def identificator_person_agent() -> Agent:
+    """
+    Cria e retorna um agente responsável por conversar com o usuário,
+    para identificar quem está falando.
+    """
+    return Agent(
+        role="Primeiro Concierge Virtual do Condomínio",
+        goal="Atender o usuário com empatia e eficiência, visando identificar quem esta falando",
+        backstory="""
+        Você é o primeiro concierge virtual treinado para conversar com pessoas no interfone da portaria de um condomínio.
+
+        Seu trabalho é:
+        - Solicitar a identificação da pessoa que está falando
+        - Coletar :
+          - Quem está no portão (interlocutor_name) (obrigatório)
+          - Solicitar que a pessoa identifique-se para que o atendimento continue
+          - Analise se o nome informado realmente é um nome aceitável, o usuário pode informar coisas como:
+            - "Olá, tudo bem?" ou ainda
+            - "Boa tarde", isso não é um nome válido
+          - Você precisa interagir até que o nome seja obtido
+        - Sua função não é identificar outras informações, apenas obter o nome e a identificação de quem está falando.
+        """,
+        verbose=False,
+        allow_delegation=False,
+    )
+
+def identificator_intent_agent() -> Agent:
+    """
+    Cria e retorna um agente responsável por conversar com o usuário,
+    para identificar qual a intenção do usuário.
+    """
+    return Agent(
+        role="Segundo Concierge Virtual do Condomínio",
+        goal="Atender o usuário com empatia e eficiência, visando identificar qual a intenção do usuário",
+        backstory="""
+        Você é o segundo concierge virtual treinado para conversar com pessoas no interfone da portaria de um condomínio.
+
+        Seu trabalho é:
+        - Solicitar a qual a intenção da pessoa que está falando
+        - Coletar :
+          - Qual a intenção da pessoa (intent_type)
+          - Por hora, aceitamos apenas duas intenções, entrega ou visita. Precisamos identificar se a intenção 
+          é uma dessas duas.
+        - Sua função não é identificar outras informações, apenas obter a intenção de quem está falando.
+        """,
+        verbose=False,
+        allow_delegation=False,
+    )
+
+def identificator_resident_apartment_agent() -> Agent:
+    """
+    Cria e retorna um agente responsável por conversar com o usuário,
+    para identificar quam o nome do morador e apartamento.
+    """
+    return Agent(
+        role="Terceiro Concierge Virtual do Condomínio",
+        goal="Atender o usuário com empatia e eficiência, visando identificar qual a apartamento do morador e o nome "
+             "do morador",
+        backstory="""
+        Você é o terceiro concierge virtual treinado para conversar com pessoas no interfone da portaria de um condomínio.
+
+        Seu trabalho é:
+        - Solicitar a qual a nome do morador e qual o apartamento
+        - Coletar :
+          - Qual o nome do morador (resident_name)
+          - Qual o apartamento (apartment_number)
+        - Sua função não é identificar outras informações, apenas obter o nome do morador e o apartamento.
+        """,
+        verbose=False,
+        allow_delegation=False,
+    )
 
 def create_conversation_coordinator_agent() -> Agent:
     """
@@ -1026,7 +1653,7 @@ def create_conversation_coordinator_agent() -> Agent:
         Seu trabalho é:
         - Entender se a pessoa deseja fazer uma entrega ou visita (obrigatório)
         - Coletar todas as informações necessárias:
-          • Quem está no portão (visitor_name) (obrigatório)
+          • Quem está no portão (interlocutor_name) (obrigatório)
           • Número do apartamento de destino (apartment_number) (obrigatório)
           • Nome do morador (resident_name) (obrigatório)
         - Confirmar quando tudo estiver preenchido
@@ -1060,7 +1687,7 @@ def create_conversation_monitor_agent() -> Agent:
         - Fiscalizar o trabalho do concierge virtual
         - Garantir que ele vau coletar todas as informações necessárias:
           • Identificar a intenção do usuário (intent_type) obrigatório: se é visita ou entrega
-          • Quem está no portão (visitor_name) (obrigatório)
+          • Quem está no portão (interlocutor_name) (obrigatório)
           • Número do apartamento de destino (apartment_number) (obrigatório)
           • Nome do morador (resident_name) (obrigatório)
         - Nunca finalize a conversa se qualquer campo estiver vazio.
@@ -1077,7 +1704,9 @@ ai/crew.py:
 from crewai import Crew
 
 from ai.state_manager import get_user_state, update_user_state, clear_user_state
-from ai.tasks import create_conversation_coordinator_task
+from ai.tasks import create_conversation_coordinator_task, conversation_extractor_name_task, \
+    conversation_extractor_intent_task, conversation_extractor_resident_apartment_task
+from ai.tools import validar_intent_com_fuzzy
 from ai.utils.intent_extractor import extract_intent_from_response
 from ai.models.intent import IntentData
 import json
@@ -1086,25 +1715,108 @@ def process_user_message_with_coordinator(id: str, message: str) -> dict:
     state = get_user_state(id)
     history = "\n".join(state["history"])
     partial_intent = state["intent"]
+    dados_estruturados = None
 
-    # Cria a Task com histórico e dados parciais
-    task = create_conversation_coordinator_task(
-        user_message=message,
-        conversation_history=history,
-        intent=partial_intent
-    )
+    # A partir do nome obtido, verifica a intenção do usuário
+    if not state["intent"] or state["intent"]["intent_type"] == "":
+        task = conversation_extractor_intent_task(
+            user_message=message,
+            conversation_history=history,
+            intent=partial_intent
+        )
+        crew = Crew(tasks=[task], verbose=True)
+        result = str(crew.kickoff())
+        try:
+            dados_estruturados = extract_intent_from_response(result)
+            update_user_state(id, intent=dados_estruturados.get("dados"),
+                              message=f"Usuário: {message}\nResposta LLM: {dados_estruturados.get('mensagem')}")
+        except Exception:
+            update_user_state(id, message=f"Usuário: {dados_estruturados.get('mensagem')}")
 
-    crew = Crew(tasks=[task], verbose=True)
-    result = str(crew.kickoff())
+        if dados_estruturados["dados"]["intent_type"] == "" or dados_estruturados["dados"]["intent_type"] == "desconhecido":
+            return dados_estruturados
 
-    # Tenta extrair novos dados (você pode usar OpenAI function calling ou Regex/JSON)
-    try:
-        dados_estruturados = extract_intent_from_response(result)
-        update_user_state(id, intent=dados_estruturados.get("dados"), message=f"Usuário: {message}\nResposta LLM: {dados_estruturados.get('mensagem')}")
-    except Exception:
-        update_user_state(id, message=f"Usuário: {dados_estruturados.get('mensagem')}")
 
-    return dados_estruturados
+    state = get_user_state(id)
+    history = "\n".join(state["history"])
+    partial_intent = state["intent"]
+
+    # Verifica se o nome foi obtido, caso contrário interage com o usuário para extrair essa informação
+    if state["intent"] and state["intent"]["interlocutor_name"] == "":
+        task = conversation_extractor_name_task(
+            user_message=message,
+            conversation_history=history,
+            intent=partial_intent
+        )
+        crew = Crew(tasks=[task], verbose=True)
+        result = str(crew.kickoff())
+        try:
+            dados_estruturados = extract_intent_from_response(result)
+            update_user_state(id, intent=dados_estruturados.get("dados"),
+                              message=f"Usuário: {message}\nResposta LLM: {dados_estruturados.get('mensagem')}")
+        except Exception:
+            update_user_state(id, message=f"Usuário: {dados_estruturados.get('mensagem')}")
+
+        if dados_estruturados["dados"]["interlocutor_name"] == "":
+            return dados_estruturados
+
+    state = get_user_state(id)
+    history = "\n".join(state["history"])
+    partial_intent = state["intent"]
+
+    if state["intent"] and state["intent"]["apartment_number"] == "" or state["intent"]["resident_name"] == "":
+        task = conversation_extractor_resident_apartment_task(
+            user_message=message,
+            conversation_history=history,
+            intent=partial_intent
+        )
+        crew = Crew(tasks=[task], verbose=True)
+        result = str(crew.kickoff())
+        try:
+            dados_estruturados = extract_intent_from_response(result)
+            update_user_state(id, intent=dados_estruturados.get("dados"),
+                              message=f"Usuário: {message}\nResposta LLM: {dados_estruturados.get('mensagem')}")
+        except Exception:
+            update_user_state(id, message=f"Usuário: {dados_estruturados.get('mensagem')}")
+
+        if dados_estruturados["dados"]["apartment_number"] == "" or dados_estruturados["dados"]["resident_name"] == "":
+            return dados_estruturados
+
+        # É preciso retornar os dados para poder deixar a chamada em waiting enquanto processamos a intenção do usuário
+
+        state = get_user_state(id)
+        partial_intent = state["intent"]
+        resultado = validar_intent_com_fuzzy(partial_intent)
+        print(resultado)
+
+        return dados_estruturados
+
+
+
+
+
+
+
+
+
+    # # Cria a Task com histórico e dados parciais
+    # task = create_conversation_coordinator_task(
+    #     user_message=message,
+    #     conversation_history=history,
+    #     intent=partial_intent
+    # )
+    #
+    # crew = Crew(tasks=[task], verbose=True)
+    # result = str(crew.kickoff())
+    #
+    # # Tenta extrair novos dados (você pode usar OpenAI function calling ou Regex/JSON)
+    # try:
+    #     dados_estruturados = extract_intent_from_response(result)
+    #     update_user_state(id, intent=dados_estruturados.get("dados"), message=f"Usuário: {message}\nResposta LLM: {dados_estruturados.get('mensagem')}")
+    # except Exception:
+    #     update_user_state(id, message=f"Usuário: {dados_estruturados.get('mensagem')}")
+    #
+    # return dados_estruturados
 
 
 ai/main.py:
@@ -1145,7 +1857,7 @@ INTENT_SCHEMA = """
     <string name="mensagem" description="Mensagem a ser enviada ao usuário, clara e objetiva"/>
     <object name="dados">
       <string name="intent_type" format="enum" enum-values="visita,entrega,desconhecido"/>
-      <string name="visitor_name" on-fail-soft="noop"/>
+      <string name="interlocutor_name" on-fail-soft="noop"/>
       <string name="apartment_number" on-fail-soft="noop"/>
       <string name="resident_name" on-fail-soft="noop"/>
     </object>
@@ -1180,7 +1892,7 @@ def extract_intent_from_response(response: str) -> Dict:
         # Cálculo de completude
         campos_preenchidos = all([
             intent.intent_type != IntentType.DESCONHECIDO,
-            intent.visitor_name.strip(),
+            intent.interlocutor_name.strip(),
             intent.apartment_number.strip(),
             intent.resident_name.strip()
         ])
@@ -1205,7 +1917,7 @@ def extract_intent_from_response(response: str) -> Dict:
                 "mensagem": "Não foi possível identificar sua intenção e seu nome, por favor, me informe seu nome e o que deseja.",
                 "dados": {
                     "intent_type": "",
-                    "visitor_name": "",
+                    "interlocutor_name": "",
                     "apartment_number": "",
                     "resident_name": "",
                     "set_call_status": "USER_TURN"
@@ -1233,7 +1945,7 @@ class IntentType(str, Enum):
 
 class IntentData(BaseModel):
     intent_type: IntentType = Field(..., description="Tipo de intenção identificada")
-    visitor_name: str = Field("", description="Nome da pessoa no portão")
+    interlocutor_name: str = Field("", description="Nome da pessoa no portão")
     apartment_number: str = Field("", description="Número do apartamento de destino")
     resident_name: str = Field("", description="Nome do morador/destinatário")
 
@@ -1245,4 +1957,84 @@ class FullIntentResponse(BaseModel):
 
 
 ai/models/__init__.py:
+
+
+data/apartamentos.json:
+[
+  {
+    "apartment_number": "101",
+    "residents": ["Ana Beatriz Silva", "João Pedro Silva"],
+    "voip_number": "sip:101@condominio.local"
+  },
+  {
+    "apartment_number": "102",
+    "residents": ["Carlos Oliveira"],
+    "voip_number": "sip:102@condominio.local"
+  },
+  {
+    "apartment_number": "201",
+    "residents": ["Fernanda Souza", "Tiago Souza"],
+    "voip_number": "sip:201@condominio.local"
+  },
+  {
+    "apartment_number": "202",
+    "residents": ["Mariana Costa"],
+    "voip_number": "sip:202@condominio.local"
+  },
+  {
+    "apartment_number": "301",
+    "residents": ["Rodrigo Lima", "Letícia Lima"],
+    "voip_number": "sip:301@condominio.local"
+  },
+  {
+    "apartment_number": "302",
+    "residents": ["Lucas Martins"],
+    "voip_number": "sip:302@condominio.local"
+  },
+  {
+    "apartment_number": "401",
+    "residents": ["Paula Fernandes"],
+    "voip_number": "sip:401@condominio.local"
+  },
+  {
+    "apartment_number": "402",
+    "residents": ["Eduardo Almeida", "Bruna Almeida"],
+    "voip_number": "sip:402@condominio.local"
+  },
+  {
+    "apartment_number": "501",
+    "residents": ["Renata Oliveira", "Daner dos Reis"],
+    "voip_number": "1003035"
+  },
+  {
+    "apartment_number": "502",
+    "residents": ["Vinícius Barros", "Marina Barros"],
+    "voip_number": "sip:502@condominio.local"
+  }
+]
+
+
+services/__init__.py:
+
+
+services/amqp_service.py:
+
+import pika
+import json
+import logging
+
+def enviar_msg_autorizacao_morador(payload):
+    connection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
+    channel = connection.channel()
+
+    channel.queue_declare(queue='fila_autorizacao')
+
+    channel.basic_publish(
+        exchange='',
+        routing_key='fila_autorizacao',
+        body=json.dumps(payload)
+    )
+
+    logging.info(f"Mensagem AMQP enviada: {payload}")
+    connection.close()
 

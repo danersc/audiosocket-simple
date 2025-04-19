@@ -14,7 +14,7 @@ class IntentType(str, Enum):
 
 class IntentData(BaseModel):
     intent_type: IntentType = Field(..., description="Tipo de intenção identificada")
-    visitor_name: str = Field("", description="Nome da pessoa no portão")
+    interlocutor_name: str = Field("", description="Nome da pessoa no portão")
     apartment_number: str = Field("", description="Número do apartamento de destino")
     resident_name: str = Field("", description="Nome do morador/destinatário")
 

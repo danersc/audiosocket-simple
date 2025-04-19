@@ -10,19 +10,53 @@ import os
 KIND_SLIN = 0x10
 logger = logging.getLogger(__name__)
 
+
+async def limpar_buffer_reader(reader):
+    """
+    Esvazia o buffer do reader imediatamente, evitando dados antigos acumulados.
+    """
+    total_bytes_descartados = 0
+    try:
+        while not reader.at_eof():
+            data = await asyncio.wait_for(reader.read(1024), timeout=0.01)
+            if not data:
+                break
+            total_bytes_descartados += len(data)
+            logger.debug(f"Limpando buffer: {len(data)} bytes descartados.")
+    except (asyncio.TimeoutError, asyncio.IncompleteReadError):
+        pass
+
+    logger.info(f"Total descartado nesta limpeza do buffer: {total_bytes_descartados} bytes")
+    return total_bytes_descartados
+
 async def receber_audio(reader, state_machine, audio_queue):
     try:
         while True:
+            if not state_machine.is_user_turn():
+                # Fora do USER_TURN: mantenha o buffer limpo constantemente
+                bytes_descartados = await limpar_buffer_reader(reader)
+                logger.info(f"[BUFFER LIMPEZA] Bytes descartados: {bytes_descartados}")
+                await asyncio.sleep(0.01)  # Intervalo curto para não sobrecarregar CPU
+                continue
+
+            # Se chegou aqui, é USER_TURN: leia normalmente
             header = await reader.readexactly(3)
             kind = header[0]
             length = int.from_bytes(header[1:3], 'big')
             audio_chunk = await reader.readexactly(length)
-            if kind == KIND_SLIN and len(audio_chunk) == 320 and state_machine.is_user_turn():
+
+            logger.info(f"[BUFFER LEITURA] Chunk recebido (USER_TURN): {len(audio_chunk)} bytes")
+
+            if kind == KIND_SLIN and len(audio_chunk) == 320:
                 await audio_queue.put(audio_chunk)
+            else:
+                logger.warning(f"Chunk inválido recebido: kind={kind}, length={len(audio_chunk)}")
+
     except asyncio.IncompleteReadError:
         logger.info("Cliente desconectado")
     except Exception as e:
         logger.error(f"Erro ao receber áudio: {e}")
+
 
 async def enviar_audio(writer, dados_audio, origem="desconhecida"):
     logger.info(f"Iniciando envio de áudio sintetizado (origem: {origem}), tamanho total: {len(dados_audio)} bytes")
@@ -100,6 +134,7 @@ async def processar_audio(audio_queue, vad, state_machine, writer):
                         continue
 
                     resposta = await enviar_mensagem_para_ia(texto, state_machine.get_conversation_id())
+                    # está falhando aqui:
                     mensagem = extrair_mensagem_da_resposta(resposta)
                     proximo_estado = obter_estado_chamada(resposta)
 
@@ -122,13 +157,17 @@ async def iniciar_servidor_audiosocket_visitante(reader, writer, state_machine, 
 
     logger.info(f"[VISITANTE] Iniciando atendimento. Call ID: {call_id}")
 
-    greeting_audio = await sintetizar_fala_async("Condomínio Apoena, em que posso ajudar?")
+    greeting_audio = await sintetizar_fala_async("Condomínio Apoena, por favor informe o que deseja, se entrega ou visita.")
     if greeting_audio:
         state_machine.transition_to(State.IA_TURN)
         await enviar_audio(writer, greeting_audio, origem="Greeting")
         await asyncio.sleep(0.5)
 
     state_machine.transition_to(State.USER_TURN)
+
+    await limpar_buffer_reader(reader)
+
+    logger.info(f"[STATUS] Aplicando estado 'USER_TURN'")
 
     await asyncio.gather(
         receber_audio(reader, state_machine, audio_queue),
@@ -154,6 +193,8 @@ async def iniciar_servidor_audiosocket_morador(reader, writer, state_machine, ca
         await asyncio.sleep(0.5)
 
     state_machine.transition_to(State.USER_TURN)
+
+    await limpar_buffer_reader(reader)
 
     # TODO Adicionar tratamento a partir da resposta do morador
     # await asyncio.gather(

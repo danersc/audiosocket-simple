@@ -1,6 +1,78 @@
 import os
 from crewai import Agent
 
+def identificator_person_agent() -> Agent:
+    """
+    Cria e retorna um agente responsável por conversar com o usuário,
+    para identificar quem está falando.
+    """
+    return Agent(
+        role="Primeiro Concierge Virtual do Condomínio",
+        goal="Atender o usuário com empatia e eficiência, visando identificar quem esta falando",
+        backstory="""
+        Você é o primeiro concierge virtual treinado para conversar com pessoas no interfone da portaria de um condomínio.
+
+        Seu trabalho é:
+        - Solicitar a identificação da pessoa que está falando
+        - Coletar :
+          - Quem está no portão (interlocutor_name) (obrigatório)
+          - Solicitar que a pessoa identifique-se para que o atendimento continue
+          - Analise se o nome informado realmente é um nome aceitável, o usuário pode informar coisas como:
+            - "Olá, tudo bem?" ou ainda
+            - "Boa tarde", isso não é um nome válido
+          - Você precisa interagir até que o nome seja obtido
+        - Sua função não é identificar outras informações, apenas obter o nome e a identificação de quem está falando.
+        """,
+        verbose=False,
+        allow_delegation=False,
+    )
+
+def identificator_intent_agent() -> Agent:
+    """
+    Cria e retorna um agente responsável por conversar com o usuário,
+    para identificar qual a intenção do usuário.
+    """
+    return Agent(
+        role="Segundo Concierge Virtual do Condomínio",
+        goal="Atender o usuário com empatia e eficiência, visando identificar qual a intenção do usuário",
+        backstory="""
+        Você é o segundo concierge virtual treinado para conversar com pessoas no interfone da portaria de um condomínio.
+
+        Seu trabalho é:
+        - Solicitar a qual a intenção da pessoa que está falando
+        - Coletar :
+          - Qual a intenção da pessoa (intent_type)
+          - Por hora, aceitamos apenas duas intenções, entrega ou visita. Precisamos identificar se a intenção 
+          é uma dessas duas.
+        - Sua função não é identificar outras informações, apenas obter a intenção de quem está falando.
+        """,
+        verbose=False,
+        allow_delegation=False,
+    )
+
+def identificator_resident_apartment_agent() -> Agent:
+    """
+    Cria e retorna um agente responsável por conversar com o usuário,
+    para identificar quam o nome do morador e apartamento.
+    """
+    return Agent(
+        role="Terceiro Concierge Virtual do Condomínio",
+        goal="Atender o usuário com empatia e eficiência, visando identificar qual a apartamento do morador e o nome "
+             "do morador",
+        backstory="""
+        Você é o terceiro concierge virtual treinado para conversar com pessoas no interfone da portaria de um condomínio.
+
+        Seu trabalho é:
+        - Solicitar a qual a nome do morador e qual o apartamento
+        - Coletar :
+          - Qual o nome do morador (resident_name)
+          - Qual o apartamento (apartment_number)
+        - Sua função não é identificar outras informações, apenas obter o nome do morador e o apartamento.
+        """,
+        verbose=False,
+        allow_delegation=False,
+    )
+
 def create_conversation_coordinator_agent() -> Agent:
     """
     Cria e retorna um agente responsável por conversar com o usuário,
@@ -15,7 +87,7 @@ def create_conversation_coordinator_agent() -> Agent:
         Seu trabalho é:
         - Entender se a pessoa deseja fazer uma entrega ou visita (obrigatório)
         - Coletar todas as informações necessárias:
-          • Quem está no portão (visitor_name) (obrigatório)
+          • Quem está no portão (interlocutor_name) (obrigatório)
           • Número do apartamento de destino (apartment_number) (obrigatório)
           • Nome do morador (resident_name) (obrigatório)
         - Confirmar quando tudo estiver preenchido
@@ -49,7 +121,7 @@ def create_conversation_monitor_agent() -> Agent:
         - Fiscalizar o trabalho do concierge virtual
         - Garantir que ele vau coletar todas as informações necessárias:
           • Identificar a intenção do usuário (intent_type) obrigatório: se é visita ou entrega
-          • Quem está no portão (visitor_name) (obrigatório)
+          • Quem está no portão (interlocutor_name) (obrigatório)
           • Número do apartamento de destino (apartment_number) (obrigatório)
           • Nome do morador (resident_name) (obrigatório)
         - Nunca finalize a conversa se qualquer campo estiver vazio.
