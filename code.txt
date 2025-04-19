@@ -1,9 +1,22 @@
 Estrutura do projeto:
 README.md
+ai/
+    __init__.py
+    agents.py
+    crew.py
+    main.py
+    models/
+        __init__.py
+        intent.py
+    state_manager.py
+    tasks.py
+    tools.py
+    utils/
+        __init__.py
+        intent_extractor.py
 ai_service.py
 audio_utils.py
 audiosocket_handler.py
-code.txt
 code_gpt.py
 config.json
 main.py
@@ -15,133 +28,51 @@ state_machine.py
 Código fonte:
 
 ai_service.py:
-#!/usr/bin/env python3
-# ai_service.py - Serviço para integração com a API de IA
-
-import json
 import logging
-import httpx
-import os
-import time
+from ai.main import process_message  # Importação direta do CrewAI
 from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
-
 async def enviar_mensagem_para_ia(texto: str, conversation_id: str) -> Dict[str, Any]:
     """
-    Envia uma mensagem para a API de IA e retorna a resposta.
-
-    Args:
-        texto: O texto a ser enviado para a API
-        conversation_id: ID da conversa para manter contexto entre mensagens
-
-    Returns:
-        Dicionário com a resposta da API ou um dicionário com mensagem de erro
+    Agora chama diretamente o CrewAI ao invés da API externa.
     """
     try:
-        payload = {
-            "id": conversation_id,
-            "content": texto
+        logger.info("=" * 50)
+        logger.info(f"Chamando CrewAI diretamente com mensagem: {texto}")
+        resposta = process_message(content=texto, id=conversation_id)
+
+        logger.info("=" * 50)
+        logger.info(f"Resposta recebida do CrewAI:")
+        logger.info(resposta)
+        logger.info("=" * 50)
+
+        # Adiciona o timestamp que antes era retornado pela API
+        resposta_com_timestamp = {
+            "content": resposta,
+            "timestamp": ""
         }
 
-        api_url = os.getenv('AI_API_URL', 'http://localhost:8000/messages')
-        if api_url.endswith('/'):
-            api_url = api_url.rstrip('/')
-
-        headers = {"Content-Type": "application/json"}
-
-        logger.info("=" * 50)
-        logger.info(f"ENVIANDO REQUISIÇÃO PARA API")
-        logger.info(f"URL: {api_url}")
-        logger.info(f"ID da Conversa: {conversation_id}")
-        logger.info(f"Mensagem enviada: {texto}")
-        logger.info(f"Payload completo enviado: {json.dumps(payload, ensure_ascii=False, indent=2)}")
-        logger.info("=" * 50)
-
-        async with httpx.AsyncClient(follow_redirects=True) as client:
-            start_time = time.time()
-            response = await client.post(api_url, json=payload, headers=headers, timeout=30.0)
-            response_time = time.time() - start_time
-
-            if response.status_code == 200:
-                data = response.json()
-
-                # LOG detalhado do retorno da IA:
-                logger.info("=" * 50)
-                logger.info(f"RESPOSTA COMPLETA RECEBIDA DA API DA IA (tempo: {response_time:.2f}s):")
-                logger.info(json.dumps(data, ensure_ascii=False, indent=2))
-                logger.info("=" * 50)
-
-                return data
-            else:
-                logger.error("=" * 50)
-                logger.error(f"ERRO NA REQUISIÇÃO PARA API (tempo: {response_time:.2f}s)")
-                logger.error(f"Status: {response.status_code}")
-                logger.error(f"Resposta da API: {response.text}")
-                logger.error("=" * 50)
-
-                return {
-                    "content": {
-                        "mensagem": "Desculpe, ocorreu um erro ao processar sua solicitação.",
-                        "dados": {},
-                        "valid_for_action": False
-                    },
-                    "timestamp": "",
-                    "set_call_status": "USER_TURN"
-                }
+        return resposta_com_timestamp
 
     except Exception as e:
-        logger.error("=" * 50)
-        logger.error(f"EXCEÇÃO AO COMUNICAR COM API DA IA")
-        logger.error(f"ID da Conversa: {conversation_id}")
-        logger.error(f"Mensagem que seria enviada: {texto}")
-        logger.error(f"Erro: {str(e)}")
-        import traceback
-        logger.error(f"Traceback: {traceback.format_exc()}")
-        logger.error("=" * 50)
-
+        logger.error(f"Erro ao comunicar com CrewAI diretamente: {e}")
         return {
             "content": {
-                "mensagem": "Desculpe, não foi possível me conectar ao serviço neste momento.",
+                "mensagem": "Desculpe, não consegui processar sua solicitação no momento.",
                 "dados": {},
-                "valid_for_action": False
+                "valid_for_action": False,
+                "set_call_status": "USER_TURN"
             },
-            "timestamp": "",
-            "set_call_status": "USER_TURN"
+            "timestamp": ""
         }
 
 def extrair_mensagem_da_resposta(resposta: Dict[str, Any]) -> str:
-    """
-    Extrai a mensagem de texto da resposta da API.
-    
-    Args:
-        resposta: Resposta da API
-        
-    Returns:
-        Mensagem de texto para sintetizar
-    """
-    try:
-        return resposta.get("content", {}).get("mensagem", "")
-    except Exception as e:
-        logger.error(f"Erro ao extrair mensagem da resposta: {e}")
-        return "Desculpe, ocorreu um erro ao processar sua solicitação."
+    return resposta.get("content", {}).get("mensagem", "")
 
 def obter_estado_chamada(resposta: Dict[str, Any]) -> Optional[str]:
-    """
-    Obtém o estado da chamada da resposta da API.
-
-    Args:
-        resposta: Resposta da API
-
-    Returns:
-        Estado da chamada (USER_TURN, WAITING, IA_TURN) ou None caso não especificado
-    """
-    try:
-        return resposta.get("content", {}).get("set_call_status")
-    except Exception as e:
-        logger.error(f"Erro ao obter estado da chamada: {e}")
-        return None
+    return resposta.get("content", {}).get("set_call_status")
 
 
 audiosocket_handler.py:
@@ -308,6 +239,10 @@ fastapi
 uvicorn[standard]
 jinja2
 pydantic
+crewai==0.108.0
+crewai-tools==0.38.1
+redis==5.2.1
+guardrails-ai==0.6.5
 
 
 config.json:
@@ -330,1457 +265,984 @@ config.json:
     }
 }
 
-code.txt:
-Estrutura do projeto:
-README.md
-ai_service.py
-audio_utils.py
-audiosocket_handler.py
-code_gpt.py
-config.json
-main.py
-microfone_client.py
-requirements.txt
-speech_service.py
-state_machine.py
-
-Código fonte:
-
-ai_service.py:
+state_machine.py:
 #!/usr/bin/env python3
-# ai_service.py - Serviço para integração com a API de IA
+# state_machine.py - Máquina de estado simplificada para gerenciar turnos de conversa
 
-import json
+import enum
 import logging
-import httpx
-import os
-import time
-from typing import Dict, Any, Optional
+import uuid
+from datetime import datetime
+from typing import Callable, List, Dict, Optional
+import asyncio  # <-- necessário para as funções assíncronas adicionadas
 
 logger = logging.getLogger(__name__)
 
 
-async def enviar_mensagem_para_ia(texto: str, conversation_id: str) -> Dict[str, Any]:
-    """
-    Envia uma mensagem para a API de IA e retorna a resposta.
+class State(enum.Enum):
+    """Estados simplificados para a conversa entre usuário e IA."""
+    STANDBY = "STANDBY"  # Estado inicial, aguardando nova chamada
+    USER_TURN = "USER_TURN"  # Turno do usuário (sistema está ouvindo)
+    WAITING = "WAITING"  # Estado intermediário de processamento
+    IA_TURN = "IA_TURN"  # Turno da IA (sistema está respondendo)
 
-    Args:
-        texto: O texto a ser enviado para a API
-        conversation_id: ID da conversa para manter contexto entre mensagens
 
-    Returns:
-        Dicionário com a resposta da API ou um dicionário com mensagem de erro
+class StateMachine:
     """
-    try:
-        payload = {
-            "id": conversation_id,
-            "content": texto
+    Máquina de estados simplificada para controlar o fluxo de comunicação
+    entre o usuário e a IA em uma chamada.
+    """
+
+    def __init__(self):
+        self.current_state = State.STANDBY
+        self.conversation_id = None
+        self.state_change_callbacks: Dict[State, List[Callable]] = {
+            state: [] for state in State
         }
+        self.transcricoes = []
+        self.ultima_resposta = None
+        logger.info(f"Máquina de estados inicializada em {self.current_state}")
 
-        api_url = os.getenv('AI_API_URL', 'http://localhost:8000/messages')
-        if api_url.endswith('/'):
-            api_url = api_url.rstrip('/')
+    def get_state(self) -> State:
+        return self.current_state
 
-        headers = {"Content-Type": "application/json"}
+    def transition_to(self, new_state: State) -> None:
+        if new_state == self.current_state:
+            logger.debug(f"Ignorando transição redundante para {new_state}")
+            return
 
-        logger.info("=" * 50)
-        logger.info(f"ENVIANDO REQUISIÇÃO PARA API")
-        logger.info(f"URL: {api_url}")
-        logger.info(f"ID da Conversa: {conversation_id}")
-        logger.info(f"Mensagem enviada: {texto}")
-        logger.info(f"Payload completo enviado: {json.dumps(payload, ensure_ascii=False, indent=2)}")
-        logger.info("=" * 50)
+        old_state = self.current_state
+        self.current_state = new_state
+        logger.info(f"Transição de estado: {old_state} -> {new_state}")
 
-        async with httpx.AsyncClient(follow_redirects=True) as client:
-            start_time = time.time()
-            response = await client.post(api_url, json=payload, headers=headers, timeout=30.0)
-            response_time = time.time() - start_time
+        if old_state == State.IA_TURN and new_state == State.USER_TURN:
+            logger.info("*** IMPORTANTE: Transição de IA_TURN para USER_TURN - ativando escuta ***")
+            self.registrar_transcricao_sistema("Sistema ativou escuta - aguardando fala do usuário")
+        elif old_state == State.WAITING:
+            logger.info(f"Saindo do estado WAITING para {new_state}")
+            self.registrar_transcricao_sistema(f"Estado alterado: {old_state.value} -> {new_state.value}")
+        if new_state == State.USER_TURN:
+            logger.info("*** Sistema pronto para ouvir o usuário ***")
 
-            if response.status_code == 200:
-                data = response.json()
+        for callback in self.state_change_callbacks.get(new_state, []):
+            try:
+                callback()
+            except Exception as e:
+                logger.error(f"Erro no callback de mudança de estado: {e}")
 
-                # LOG detalhado do retorno da IA:
-                logger.info("=" * 50)
-                logger.info(f"RESPOSTA COMPLETA RECEBIDA DA API DA IA (tempo: {response_time:.2f}s):")
-                logger.info(json.dumps(data, ensure_ascii=False, indent=2))
-                logger.info("=" * 50)
+    def on_state_change(self, state: State, callback: Callable) -> None:
+        if state in self.state_change_callbacks:
+            self.state_change_callbacks[state].append(callback)
 
-                return data
-            else:
-                logger.error("=" * 50)
-                logger.error(f"ERRO NA REQUISIÇÃO PARA API (tempo: {response_time:.2f}s)")
-                logger.error(f"Status: {response.status_code}")
-                logger.error(f"Resposta da API: {response.text}")
-                logger.error("=" * 50)
+    def is_user_turn(self) -> bool:
+        return self.current_state == State.USER_TURN
 
-                return {
-                    "content": {
-                        "mensagem": "Desculpe, ocorreu um erro ao processar sua solicitação.",
-                        "dados": {},
-                        "valid_for_action": False
-                    },
-                    "timestamp": "",
-                    "set_call_status": "USER_TURN"
-                }
+    def is_ai_turn(self) -> bool:
+        return self.current_state == State.IA_TURN
 
-    except Exception as e:
-        logger.error("=" * 50)
-        logger.error(f"EXCEÇÃO AO COMUNICAR COM API DA IA")
-        logger.error(f"ID da Conversa: {conversation_id}")
-        logger.error(f"Mensagem que seria enviada: {texto}")
-        logger.error(f"Erro: {str(e)}")
-        import traceback
-        logger.error(f"Traceback: {traceback.format_exc()}")
-        logger.error("=" * 50)
+    def is_waiting(self) -> bool:
+        return self.current_state == State.WAITING
 
-        return {
-            "content": {
-                "mensagem": "Desculpe, não foi possível me conectar ao serviço neste momento.",
-                "dados": {},
-                "valid_for_action": False
-            },
-            "timestamp": "",
-            "set_call_status": "USER_TURN"
-        }
+    def is_standby(self) -> bool:
+        return self.current_state == State.STANDBY
 
-def extrair_mensagem_da_resposta(resposta: Dict[str, Any]) -> str:
+    def start_new_conversation(self, standby=False) -> str:
+        self.conversation_id = str(uuid.uuid4())
+        self.transcricoes = []
+        self.ultima_resposta = None
+
+        if not standby:
+            self.transition_to(State.USER_TURN)
+        else:
+            self.transition_to(State.STANDBY)
+
+        logger.info(f"Nova conversa iniciada com ID: {self.conversation_id}")
+        return self.conversation_id
+
+    def registrar_transcricao_usuario(self, texto: str) -> None:
+        self.transcricoes.append({
+            "timestamp": datetime.now().isoformat(),
+            "origem": "usuario",
+            "texto": texto
+        })
+        logger.info(f"Transcrição do usuário registrada: {texto}")
+
+    def registrar_transcricao_ia(self, texto: str, resposta_completa: Optional[Dict] = None) -> None:
+        self.transcricoes.append({
+            "timestamp": datetime.now().isoformat(),
+            "origem": "ia",
+            "texto": texto
+        })
+        self.ultima_resposta = resposta_completa
+        logger.info(f"Resposta da IA registrada: {texto}")
+
+    def registrar_transcricao_sistema(self, texto: str) -> None:
+        self.transcricoes.append({
+            "timestamp": datetime.now().isoformat(),
+            "origem": "sistema",
+            "texto": texto
+        })
+        logger.info(f"Mensagem do sistema registrada: {texto}")
+
+    def obter_historico_transcricoes(self) -> List[Dict]:
+        return self.transcricoes
+
+    def get_conversation_id(self) -> Optional[str]:
+        return self.conversation_id
+
+    def end_conversation(self) -> None:
+        logger.info(f"Conversa {self.conversation_id} finalizada")
+        self.conversation_id = None
+        self.transition_to(State.STANDBY)
+
+    # Novas funções adicionadas:
+    async def wait_for_state(self, state: State):
+        """Aguarda até que o estado especificado seja atingido."""
+        while self.current_state != state:
+            await asyncio.sleep(0.1)
+
+    async def wait_for_state_change(self):
+        """Aguarda até que ocorra uma mudança do estado atual."""
+        current_state = self.current_state
+        while self.current_state == current_state:
+            await asyncio.sleep(0.1)
+
+
+README.md:
+# AudioSocket Simple
+
+Aplicação simplificada para atendimento por IA em condomínios utilizando o protocolo AudioSocket do Asterisk.
+
+## Descrição
+
+Esta aplicação é responsável por gerenciar chamadas VoIP através do protocolo AudioSocket, realizando:
+
+1. Detecção de voz usando VAD (Voice Activity Detection)
+2. Transcrição do áudio usando Azure Speech Services
+3. Processamento de intenções via API de IA
+4. Síntese de voz para respostas
+5. Gerenciamento de turnos de conversa entre usuário e IA
+
+## Funcionalidades principais
+
+- Socket TCP para comunicação com o Asterisk via protocolo AudioSocket
+- Máquina de estados simplificada com 4 estados (STANDBY, USER_TURN, WAITING, IA_TURN)
+- Gerenciamento de IDs de conversa para manter o contexto entre mensagens
+- Mensagem de saudação automática configurável
+- Detecção de voz e silêncio usando webrtcvad
+- Transcrição de áudio através do Azure Speech Services
+- Comunicação com API de IA para processar mensagens do usuário
+- Síntese de voz usando Azure Speech Services
+- Interface web simples para debug e monitoramento
+
+## Requisitos
+
+- Python 3.8+
+- Biblioteca webrtcvad para detecção de voz
+- Azure Speech Services para transcrição e síntese de voz
+- API de IA para processamento de mensagens
+
+## Configuração
+
+1. Crie um arquivo `.env` com as seguintes variáveis de ambiente:
+   ```
+   AZURE_SPEECH_KEY=sua_chave_do_azure
+   AZURE_SPEECH_REGION=sua_regiao_do_azure
+   SILENCE_THRESHOLD_SECONDS=2.0
+   AI_API_URL=http://localhost:8000/messages
+   ```
+
+2. Instale as dependências:
+   ```
+   pip install -r requirements.txt
+   ```
+
+3. Personalize a mensagem de saudação no arquivo `config.json`:
+   ```json
+   {
+     "greeting": {
+       "message": "Condomínio Apoena, em que posso ajudar?",
+       "voice": "pt-BR-AntonioNeural",
+       "delay_seconds": 2
+     },
+     ...
+   }
+   ```
+
+## Execução
+
+### Servidor principal
+Inicie o servidor principal que lida com a chamada e inclui a interface web de debug:
+```
+python main.py
+```
+
+O servidor AudioSocket irá escutar em 127.0.0.1:8080 e a interface web de debug estará disponível em http://127.0.0.1:8081.
+
+### Cliente de teste com microfone
+Para testar o sistema com seu microfone local:
+```
+python microfone_client.py
+```
+
+Este cliente captura áudio do microfone do seu computador e o envia para o servidor AudioSocket, permitindo testar toda a funcionalidade sem precisar do Asterisk.
+
+Opções disponíveis:
+```
+python microfone_client.py --host 127.0.0.1 --port 8080
+```
+
+## Fluxo de conversação
+
+1. **Estado STANDBY**: 
+   - Sistema aguarda uma conexão
+   - Ao receber uma conexão, registra o ID da chamada
+   - Após um breve delay, envia a mensagem de saudação
+   
+2. **Estado USER_TURN**:
+   - Sistema ativa após a saudação
+   - Detecta quando o usuário começa a falar
+   - Captura o áudio até identificar silêncio
+   - Transcreve o áudio usando Azure Speech
+   
+3. **Estado WAITING**:
+   - Processa o texto transcrito
+   - Envia para a API de IA
+   
+4. **Estado IA_TURN**:
+   - Recebe a resposta da IA
+   - Sintetiza a fala usando Azure Speech
+   - Envia o áudio de resposta
+   - Retorna para USER_TURN ou STANDBY dependendo da resposta da IA
+
+## Interface de Debug
+
+A interface web de debug mostra:
+- Estado atual da chamada
+- ID da conversa ativa
+- Histórico de transcrições (usuário, IA e sistema)
+
+A página atualiza automaticamente a cada 2 segundos para mostrar o estado atual.
+
+## API de IA
+
+A aplicação se comunica com uma API de IA pela URL `http://localhost:8000/messages` que deve retornar uma resposta no formato:
+
+```json
+{
+    "content": {
+        "mensagem": "Texto da resposta da IA",
+        "dados": {
+            "intent_type": "tipo_intencao",
+            "outros_dados": "valores_relevantes"
+        },
+        "valid_for_action": false
+    },
+    "timestamp": "2025-04-15T19:17:59.052067",
+    "set_call_status": "USER_TURN"
+}
+```
+
+O campo `set_call_status` pode ter os valores: "USER_TURN", "WAITING", "IA_TURN" ou "STANDBY" para controlar o fluxo da conversa.
+
+audio_utils.py:
+#!/usr/bin/env python3
+# audio_utils.py - Utilitários para manipulação de áudio
+
+from pydub import AudioSegment
+from io import BytesIO
+import logging
+
+logger = logging.getLogger(__name__)
+
+def converter_bytes_para_wav(dados_slin, sample_rate=8000):
     """
-    Extrai a mensagem de texto da resposta da API.
+    Converte bytes no formato SLIN para WAV.
     
     Args:
-        resposta: Resposta da API
+        dados_slin: Bytes de áudio no formato SLIN
+        sample_rate: Taxa de amostragem (padrão: 8000 Hz)
         
     Returns:
-        Mensagem de texto para sintetizar
+        Bytes WAV do áudio convertido
     """
     try:
-        return resposta.get("content", {}).get("mensagem", "")
+        audio_segment = AudioSegment(
+            data=bytes(dados_slin),
+            sample_width=2,  # 16 bits = 2 bytes
+            frame_rate=sample_rate,
+            channels=1
+        )
+        buffer = BytesIO()
+        audio_segment.export(buffer, format='wav')
+        return buffer.getvalue()
     except Exception as e:
-        logger.error(f"Erro ao extrair mensagem da resposta: {e}")
-        return "Desculpe, ocorreu um erro ao processar sua solicitação."
-
-def obter_estado_chamada(resposta: Dict[str, Any]) -> Optional[str]:
-    """
-    Obtém o estado da chamada da resposta da API.
-
-    Args:
-        resposta: Resposta da API
-
-    Returns:
-        Estado da chamada (USER_TURN, WAITING, IA_TURN) ou None caso não especificado
-    """
-    try:
-        return resposta.get("content", {}).get("set_call_status")
-    except Exception as e:
-        logger.error(f"Erro ao obter estado da chamada: {e}")
+        logger.error(f"Erro ao converter bytes para WAV: {e}")
         return None
 
+def converter_wav_para_slin(dados_wav, sample_rate=8000):
+    """
+    Converte bytes WAV para o formato SLIN.
+    
+    Args:
+        dados_wav: Bytes de áudio no formato WAV
+        sample_rate: Taxa de amostragem desejada (padrão: 8000 Hz)
+        
+    Returns:
+        Bytes SLIN do áudio convertido
+    """
+    try:
+        audio_segment = AudioSegment.from_file(BytesIO(dados_wav), format="wav")
+        audio_segment = audio_segment.set_frame_rate(sample_rate).set_channels(1).set_sample_width(2)
+        return audio_segment.raw_data
+    except Exception as e:
+        logger.error(f"Erro ao converter WAV para SLIN: {e}")
+        return None
 
-audiosocket_handler.py:
-import asyncio
-import logging
-import webrtcvad
-import struct
-from speech_service import transcrever_audio_async, sintetizar_fala_async
-from ai_service import enviar_mensagem_para_ia, extrair_mensagem_da_resposta, obter_estado_chamada
-from state_machine import State
+microfone_client.py:
+#!/usr/bin/env python3
+import socket, struct, threading, pyaudio, logging, uuid
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
+
+KIND_ID, KIND_SLIN, KIND_HANGUP = 0x01, 0x10, 0x00
+
+class AudioSocketClient:
+    def __init__(self, host='127.0.0.1', port=8080):
+        self.host, self.port = host, port
+        self.call_id = uuid.uuid4().bytes
+        self.sample_rate, self.channels, self.chunk_size = 8000, 1, 320
+        self.format = pyaudio.paInt16
+        self.running = False
+
+    def connect(self):
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.socket.connect((self.host, self.port))
+        self.socket.sendall(struct.pack('>B H', KIND_ID, len(self.call_id)) + self.call_id)
+        logging.info("Conectado ao servidor.")
+        self.running = True
+        threading.Thread(target=self.send_audio).start()
+        threading.Thread(target=self.receive_audio).start()
+
+    def send_audio(self):
+        p = pyaudio.PyAudio()
+        stream = p.open(format=self.format, channels=self.channels, rate=self.sample_rate, input=True, frames_per_buffer=self.chunk_size//2)
+        try:
+            while self.running:
+                data = stream.read(self.chunk_size//2, exception_on_overflow=False)
+                self.socket.sendall(struct.pack('>B H', KIND_SLIN, len(data)) + data)
+        except Exception as e:
+            logging.error(f"Erro no envio de áudio: {e}")
+            self.running = False
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
+
+    def receive_audio(self):
+        p = pyaudio.PyAudio()
+        stream = p.open(format=self.format, channels=self.channels, rate=self.sample_rate, output=True)
+        try:
+            while self.running:
+                header = self.socket.recv(3)
+                if not header: break
+                kind, length = header[0], struct.unpack('>H', header[1:3])[0]
+                payload = self.socket.recv(length)
+                if kind == KIND_SLIN:
+                    stream.write(payload)
+        except Exception as e:
+            logging.error(f"Erro no recebimento de áudio: {e}")
+            self.running = False
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
+
+    def disconnect(self):
+        self.running = False
+        self.socket.sendall(struct.pack('>B H', KIND_HANGUP, 0))
+        self.socket.close()
+        logging.info("Desconectado do servidor.")
+
+if __name__ == "__main__":
+    client = AudioSocketClient()
+    try:
+        client.connect()
+        while client.running: pass
+    except KeyboardInterrupt:
+        client.disconnect()
+
+
+code_gpt.py:
 import os
 
-KIND_SLIN = 0x10
-logger = logging.getLogger(__name__)
+IGNORE = {'__pycache__', '.env', '.git', '.idea', 'audio'}
 
-async def receber_audio(reader, state_machine, audio_queue):
+def list_structure(base_path, prefix=""):
+    tree = ""
+    items = sorted(os.listdir(base_path))
+    for item in items:
+        if item in IGNORE:
+            continue
+        path = os.path.join(base_path, item)
+        if os.path.isdir(path):
+            tree += f"{prefix}{item}/\n"
+            tree += list_structure(path, prefix + "    ")
+        else:
+            tree += f"{prefix}{item}\n"
+    return tree
+
+def list_code_files(base_path):
+    code = ""
+    for root, dirs, files in os.walk(base_path):
+        dirs[:] = [d for d in dirs if d not in IGNORE]
+        for file in files:
+            if file in IGNORE:
+                continue
+            file_path = os.path.join(root, file)
+            rel_path = os.path.relpath(file_path, base_path)
+            code += f"\n{rel_path}:\n"
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    code += f.read() + "\n"
+            except Exception as e:
+                code += f"Erro ao ler arquivo: {e}\n"
+    return code
+
+def main():
+    base_path = "."
+    structure = list_structure(base_path)
+    code_files = list_code_files(base_path)
+
+    with open("code.txt", "w", encoding="utf-8") as f:
+        f.write("Estrutura do projeto:\n")
+        f.write(structure)
+        f.write("\nCódigo fonte:\n")
+        f.write(code_files)
+
+    print("Arquivo 'code.txt' criado com sucesso.")
+
+if __name__ == "__main__":
+    main()
+
+
+main.py:
+import asyncio
+import logging
+from dotenv import load_dotenv
+from state_machine import StateMachine
+from audiosocket_handler import iniciar_servidor_audiosocket
+
+load_dotenv()
+logging.basicConfig(level=logging.INFO)
+
+async def handle_client(reader, writer):
+    state_machine = StateMachine()
+    state_machine.start_new_conversation()
+
+    # Lendo a mensagem inicial KIND_ID (esperado pelo cliente)
     try:
-        while True:
-            header = await reader.readexactly(3)
-            kind = header[0]
-            length = int.from_bytes(header[1:3], 'big')
-            audio_chunk = await reader.readexactly(length)
-            if kind == KIND_SLIN and len(audio_chunk) == 320 and state_machine.is_user_turn():
-                await audio_queue.put(audio_chunk)
+        header = await reader.readexactly(3)
+        kind = header[0]
+        length = int.from_bytes(header[1:3], "big")
+        call_id = await reader.readexactly(length)
+
+        if kind != 0x01:  # KIND_ID
+            logging.error("Mensagem inicial não é KIND_ID. Fechando conexão.")
+            writer.close()
+            await writer.wait_closed()
+            return
+
+        logging.info(f"Recebido Call ID: {call_id.hex()}")
+
+        # Agora iniciar o servidor audio socket normalmente
+        await iniciar_servidor_audiosocket(reader, writer, state_machine)
+
     except asyncio.IncompleteReadError:
-        logger.info("Cliente desconectado")
+        logging.error("Cliente desconectado inesperadamente.")
     except Exception as e:
-        logger.error(f"Erro ao receber áudio: {e}")
+        logging.error(f"Erro inesperado: {e}")
+    finally:
+        writer.close()
+        await writer.wait_closed()
 
-async def enviar_audio(writer, dados_audio, origem="desconhecida"):
-    logger.info(f"Iniciando envio de áudio sintetizado (origem: {origem}), tamanho total: {len(dados_audio)} bytes")
-    chunk_size = 320
-    for i in range(0, len(dados_audio), chunk_size):
-        chunk = dados_audio[i:i + chunk_size]
-        if chunk:
-            writer.write(struct.pack('>B H', KIND_SLIN, len(chunk)) + chunk)
-            await writer.drain()
-            await asyncio.sleep(0.02)
-    logger.info(f"Envio de áudio concluído (origem: {origem})")
-
-async def enviar_audio_em_loop(writer, caminho_audio):
-    with open(caminho_audio, 'rb') as f:
-        dados_audio = f.read()
-
-    chunk_size = 320
-    try:
-        while True:
-            for i in range(0, len(dados_audio), chunk_size):
-                chunk = dados_audio[i:i + chunk_size]
-                if chunk:
-                    writer.write(struct.pack('>B H', KIND_SLIN, len(chunk)) + chunk)
-                    await writer.drain()
-                    await asyncio.sleep(0.02)
-    except asyncio.CancelledError:
-        logger.info("Áudio de espera cancelado.")
-
-async def monitorar_waiting(state_machine, writer, caminho_audio):
-    waiting_task = None
-    while True:
-        await state_machine.wait_for_state(State.WAITING)
-        logger.info("Estado WAITING detectado, aguardando 3 segundos antes de iniciar áudio de espera.")
+async def main():
+    server = await asyncio.start_server(handle_client, '127.0.0.1', 8080)
+    logging.info("Servidor AudioSocket rodando em 127.0.0.1:8080")
+    async with server:
         try:
-            await asyncio.wait_for(state_machine.wait_for_state_change(), timeout=3.0)
-            logger.info("Estado WAITING terminou antes dos 3 segundos, áudio de espera não será iniciado.")
-        except asyncio.TimeoutError:
-            if state_machine.is_waiting():
-                logger.info("Timeout atingido em WAITING, iniciando áudio de espera.")
-                waiting_task = asyncio.create_task(enviar_audio_em_loop(writer, caminho_audio))
+            await server.serve_forever()
+        except asyncio.CancelledError:
+            logging.info("Servidor está sendo encerrado.")
 
-                await state_machine.wait_for_state_change()
-                if waiting_task:
-                    waiting_task.cancel()
-                    waiting_task = None
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("Servidor encerrado manualmente.")
 
-async def processar_audio(audio_queue, vad, state_machine, writer):
-    frames = []
-    is_speaking = False
-    silence_start = None
 
-    while True:
-        chunk = await audio_queue.get()
-        is_voice = vad.is_speech(chunk, 8000)
+speech_service.py:
+import asyncio
+from io import BytesIO
 
-        if is_voice:
-            frames.append(chunk)
-            is_speaking = True
-            silence_start = None
-        elif is_speaking:
-            if silence_start is None:
-                silence_start = asyncio.get_event_loop().time()
-            elif asyncio.get_event_loop().time() - silence_start > 2.0:
-                is_speaking = False
-                audio_data = b''.join(frames)
-                frames.clear()
+from audio_utils import converter_bytes_para_wav, converter_wav_para_slin
+import azure.cognitiveservices.speech as speechsdk
+import os
+from pydub import AudioSegment
 
-                if audio_data:
-                    state_machine.transition_to(State.WAITING)
-                    logger.info("Áudio capturado completo, iniciando transcrição.")
+async def transcrever_audio_async(dados_audio_slin):
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, transcrever_audio, dados_audio_slin)
 
-                    texto = await transcrever_audio_async(audio_data)
+async def sintetizar_fala_async(texto):
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, sintetizar_fala, texto)
 
-                    if not texto:
-                        logger.warning("Nenhuma transcrição obtida.")
-                        state_machine.transition_to(State.USER_TURN)
-                        continue
+def transcrever_audio(dados_audio_slin):
+    audio_wav = converter_bytes_para_wav(dados_audio_slin, 8000)
+    if not audio_wav:
+        return None
+    audio_segment = AudioSegment.from_file(BytesIO(audio_wav), format="wav")
+    audio_segment = audio_segment.set_frame_rate(16000)
+    buffer = BytesIO()
+    audio_segment.export(buffer, format='wav')
+    audio_wav_16k = buffer.getvalue()
+    speech_config = speechsdk.SpeechConfig(subscription=os.getenv('AZURE_SPEECH_KEY'), region=os.getenv('AZURE_SPEECH_REGION'))
+    speech_config.speech_recognition_language = 'pt-BR'
+    audio_stream = speechsdk.audio.PushAudioInputStream()
+    audio_stream.write(audio_wav_16k)
+    audio_stream.close()
+    audio_config = speechsdk.audio.AudioConfig(stream=audio_stream)
+    recognizer = speechsdk.SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
+    result = recognizer.recognize_once()
+    return result.text if result.reason == speechsdk.ResultReason.RecognizedSpeech else None
 
-                    logger.info(f"Texto transcrito: {texto}")
+def sintetizar_fala(texto):
+    speech_config = speechsdk.SpeechConfig(subscription=os.getenv('AZURE_SPEECH_KEY'), region=os.getenv('AZURE_SPEECH_REGION'))
+    speech_config.speech_synthesis_language = 'pt-BR'
+    synthesizer = speechsdk.SpeechSynthesizer(speech_config=speech_config, audio_config=None)
+    result = synthesizer.speak_text_async(texto).get()
+    if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
+        return converter_wav_para_slin(result.audio_data, 8000)
+    return None
 
-                    resposta = await enviar_mensagem_para_ia(texto, state_machine.get_conversation_id())
-                    mensagem = extrair_mensagem_da_resposta(resposta)
-                    proximo_estado = obter_estado_chamada(resposta)
 
-                    logger.info(f"Mensagem recebida da IA: {mensagem}")
-                    logger.info(f"Estado sugerido pela API: {proximo_estado}")
+ai/state_manager.py:
+import redis
+import json
 
-                    if mensagem:
-                        audio_resposta = await sintetizar_fala_async(mensagem)
-                        if audio_resposta and len(audio_resposta) > 0:
-                            state_machine.transition_to(State.IA_TURN)
-                            logger.info("Enviando áudio sintetizado ao usuário.")
-                            await enviar_audio(writer, audio_resposta, origem="IA Response")
-                            await asyncio.sleep(0.5)
-                        else:
-                            logger.warning("Resposta de áudio vazia.")
+r = redis.Redis(host='localhost', port=6379, decode_responses=True)
 
-                    if proximo_estado:
-                        logger.info(f"Aplicando estado '{proximo_estado}' após envio completo do áudio.")
-                        state_machine.transition_to(State[proximo_estado])
-                    else:
-                        state_machine.transition_to(State.USER_TURN)
+def get_user_state(id: str):
+    data = r.get(id)
+    return json.loads(data) if data else {"intent": {}, "history": []}
 
-async def iniciar_servidor_audiosocket(reader, writer, state_machine):
-    vad = webrtcvad.Vad(2)
-    audio_queue = asyncio.Queue()
-    caminho_audio_espera = os.path.join('audio', 'waiting.slin')
+def update_user_state(user_id: str, intent=None, message=None):
+    state = get_user_state(user_id)
+    if intent:
+        state["intent"].update(intent)
+    if message:
+        state["history"].append(message)
+    r.set(user_id, json.dumps(state))
 
-    logger.info("Iniciando síntese de áudio para mensagem de saudação.")
-    greeting_audio = await sintetizar_fala_async("Condomínio Apoena, em que posso ajudar?")
-    if greeting_audio:
-        state_machine.transition_to(State.IA_TURN)
-        logger.info("Enviando áudio da mensagem inicial ao cliente.")
-        await enviar_audio(writer, greeting_audio, origem="Greeting")
-        await asyncio.sleep(0.5)
+def clear_user_state(user_id: str):
+    r.delete(user_id)
 
-    state_machine.transition_to(State.USER_TURN)
 
-    # Adiciona a tarefa de monitoramento do WAITING independentemente
-    await asyncio.gather(
-        receber_audio(reader, state_machine, audio_queue),
-        processar_audio(audio_queue, vad, state_machine, writer),
-        monitorar_waiting(state_machine, writer, caminho_audio_espera)
+ai/tasks.py:
+from crewai import Task
+from ai.agents import create_conversation_coordinator_agent, create_conversation_monitor_agent
+
+
+def create_conversation_coordinator_task(user_message: str, conversation_history: str, intent: dict) -> Task:
+    agent = create_conversation_coordinator_agent()
+    monitor = create_conversation_monitor_agent()
+    print(conversation_history)
+    return Task(
+        description=f"""
+        Você é um concierge virtual em uma conversa com alguém no portão do condomínio.
+
+        Histórico da conversa:
+        {conversation_history}
+
+        Mensagem nova:
+        "{user_message}"
+
+        Intenção acumulada até agora:
+        {intent}
+
+        Seu trabalho:
+        - Verificar se todos os campos estão preenchidos:
+          • intent_type
+          • visitor_name
+          • apartment_number
+          • resident_name
+        - Se faltar algo, pergunte o que falta.
+        - Se estiver completo, apenas confirme.
+
+        Regras:
+        - NÃO repita o que já foi dito.
+        - NÃO reinicie a conversa.
+        - Não peça dados que já estão no intent.
+        """,
+        # expected_output="""
+        # Mensagem para o usuário ou confirmação final.
+        # Confirme a ação de forma educada, objetiva e breve.
+        # Exemplos de formato desejado:
+        # - "Entrega confirmada para Fulano no xxxx. Notificarei o morador."
+        # - "Entendido, vou avisar Cicrano no apartamento bla bla bla."
+        # Evite repetições desnecessárias, não deseje bom dia ou acrescente floreios.
+        # """,
+        expected_output=""""
+        Responda em formato JSON com os seguintes campos:
+        - mensagem: mensagem de resposta clara e objetiva para o usuário, podendo ser a confirmação final. 
+        Confirme a ação de forma educada, objetiva e breve. Ex, "Entrega confirmada para Fulano no xxxx. Notificarei o 
+        morador"., ou ainda, "Entendido, vou avisar Cicrano no apartamento bla bla bla."
+        - dados: objeto com os campos intent_type, visitor_name, apartment_number e resident_name.
+        
+        Exemplo:
+        {
+          "mensagem": "Entrega confirmada para Fulano do XXXX.",
+          "dados": {
+            "intent_type": "entrega",
+            "visitor_name": "João",
+            "apartment_number": "XXXX",
+            "resident_name": "Fulano"
+          }
+        }
+        O campo message é sempre obrigatório, pois você sempre deve ter uma resposta, mesmo que seja uma pergunta para 
+        quem está sendo atendido. Se não puder identificar os campos de dados, retorne as chaves com valores vazios. 
+        Não use floreios, não repita informações já ditas, apenas informe ou confirme a ação.
+        O campo intent_type dentro de dados deve ser preenchido com entrega, visita ou desconhecido, conforme o que 
+        você identificar.
+        
+        Alguns exemplos de campos faltando e possíveis respostas:
+        {
+          "mensagem": "Informe o que deseja",
+          "dados": {
+            "intent_type": "",
+            "visitor_name": "",
+            "apartment_number": "",
+            "resident_name": ""
+          }
+        }
+        
+        {
+          "mensagem": "Por favor, me informe o nome do visitante, o apartamento e o nome do morador que autorizou",
+          "dados": {
+            "intent_type": "visita",
+            "visitor_name": "",
+            "apartment_number": "",
+            "resident_name": ""
+          }
+        } 
+        
+        {
+          "mensagem": "Por favor, me informe o seu nome, o apartamento e o nome do morador que vai receber a entrega",
+          "dados": {
+            "intent_type": "entrega",
+            "visitor_name": "",
+            "apartment_number": "",
+            "resident_name": ""
+          }
+        }                 
+                
+        {
+          "mensagem": "Por favor, me informe o nome do morador.",
+          "dados": {
+            "intent_type": "entrega",
+            "visitor_name": "Carlos",
+            "apartment_number": "301",
+            "resident_name": ""
+          }
+        }
+        
+        {
+          "mensagem": "Por favor, me informe sua intenção",
+          "dados": {
+            "intent_type": "",
+            "visitor_name": "Carlos",
+            "apartment_number": "301",
+            "resident_name": "Fulano"
+          }
+        }
+        
+        {
+          "mensagem": "Podes informar o seu nome?",
+          "dados": {
+            "intent_type": "visita",
+            "visitor_name": "",
+            "apartment_number": "301",
+            "resident_name": "Fulano"
+          }
+        }      
+        
+        {
+          "mensagem": "Podes informar o número do apartamento?",
+          "dados": {
+            "intent_type": "visita",
+            "visitor_name": "Cicrano",
+            "apartment_number": "",
+            "resident_name": "Fulano"
+          }
+        }              
+        
+        
+        """,
+        agent=agent
     )
 
 
-requirements.txt:
-azure-cognitiveservices-speech==1.41.1
-httpx==0.27.2
-pydub==0.25.1
-python-dotenv==1.0.1
-webrtcvad==2.0.10
-asyncio
-typing_extensions
-fastapi
-uvicorn[standard]
-jinja2
-pydantic
+ai/tools.py:
+from crewai.tools import tool
 
 
-config.json:
-{
-    "greeting": {
-        "message": "Condomínio Apoena, em que posso ajudar?",
-        "voice": "pt-BR-AntonioNeural",
-        "delay_seconds": 2
-    },
-    "system": {
-        "default_state": "STANDBY",
-        "silence_threshold_seconds": 2.0,
-        "max_transaction_time_seconds": 30
-    },
-    "audio": {
-        "sample_rate": 8000,
-        "channels": 1,
-        "format": "SLIN",
-        "chunk_size": 320
-    }
-}
-
-state_machine.py:
-#!/usr/bin/env python3
-# state_machine.py - Máquina de estado simplificada para gerenciar turnos de conversa
-
-import enum
-import logging
-import uuid
-from datetime import datetime
-from typing import Callable, List, Dict, Optional
-import asyncio  # <-- necessário para as funções assíncronas adicionadas
-
-logger = logging.getLogger(__name__)
-
-
-class State(enum.Enum):
-    """Estados simplificados para a conversa entre usuário e IA."""
-    STANDBY = "STANDBY"  # Estado inicial, aguardando nova chamada
-    USER_TURN = "USER_TURN"  # Turno do usuário (sistema está ouvindo)
-    WAITING = "WAITING"  # Estado intermediário de processamento
-    IA_TURN = "IA_TURN"  # Turno da IA (sistema está respondendo)
-
-
-class StateMachine:
+@tool("SendMessageTool")
+def identify_user_intent(message: str) -> str:
     """
-    Máquina de estados simplificada para controlar o fluxo de comunicação
-    entre o usuário e a IA em uma chamada.
+    Extrai intenção do usuário com base na mensagem utilizando um modelo LLM.
+    Retorna um JSON no formato esperado por UserIntent.
     """
-
-    def __init__(self):
-        self.current_state = State.STANDBY
-        self.conversation_id = None
-        self.state_change_callbacks: Dict[State, List[Callable]] = {
-            state: [] for state in State
-        }
-        self.transcricoes = []
-        self.ultima_resposta = None
-        logger.info(f"Máquina de estados inicializada em {self.current_state}")
-
-    def get_state(self) -> State:
-        return self.current_state
-
-    def transition_to(self, new_state: State) -> None:
-        if new_state == self.current_state:
-            logger.debug(f"Ignorando transição redundante para {new_state}")
-            return
-
-        old_state = self.current_state
-        self.current_state = new_state
-        logger.info(f"Transição de estado: {old_state} -> {new_state}")
-
-        if old_state == State.IA_TURN and new_state == State.USER_TURN:
-            logger.info("*** IMPORTANTE: Transição de IA_TURN para USER_TURN - ativando escuta ***")
-            self.registrar_transcricao_sistema("Sistema ativou escuta - aguardando fala do usuário")
-        elif old_state == State.WAITING:
-            logger.info(f"Saindo do estado WAITING para {new_state}")
-            self.registrar_transcricao_sistema(f"Estado alterado: {old_state.value} -> {new_state.value}")
-        if new_state == State.USER_TURN:
-            logger.info("*** Sistema pronto para ouvir o usuário ***")
-
-        for callback in self.state_change_callbacks.get(new_state, []):
-            try:
-                callback()
-            except Exception as e:
-                logger.error(f"Erro no callback de mudança de estado: {e}")
-
-    def on_state_change(self, state: State, callback: Callable) -> None:
-        if state in self.state_change_callbacks:
-            self.state_change_callbacks[state].append(callback)
-
-    def is_user_turn(self) -> bool:
-        return self.current_state == State.USER_TURN
-
-    def is_ai_turn(self) -> bool:
-        return self.current_state == State.IA_TURN
-
-    def is_waiting(self) -> bool:
-        return self.current_state == State.WAITING
-
-    def is_standby(self) -> bool:
-        return self.current_state == State.STANDBY
-
-    def start_new_conversation(self, standby=False) -> str:
-        self.conversation_id = str(uuid.uuid4())
-        self.transcricoes = []
-        self.ultima_resposta = None
-
-        if not standby:
-            self.transition_to(State.USER_TURN)
-        else:
-            self.transition_to(State.STANDBY)
-
-        logger.info(f"Nova conversa iniciada com ID: {self.conversation_id}")
-        return self.conversation_id
-
-    def registrar_transcricao_usuario(self, texto: str) -> None:
-        self.transcricoes.append({
-            "timestamp": datetime.now().isoformat(),
-            "origem": "usuario",
-            "texto": texto
-        })
-        logger.info(f"Transcrição do usuário registrada: {texto}")
-
-    def registrar_transcricao_ia(self, texto: str, resposta_completa: Optional[Dict] = None) -> None:
-        self.transcricoes.append({
-            "timestamp": datetime.now().isoformat(),
-            "origem": "ia",
-            "texto": texto
-        })
-        self.ultima_resposta = resposta_completa
-        logger.info(f"Resposta da IA registrada: {texto}")
-
-    def registrar_transcricao_sistema(self, texto: str) -> None:
-        self.transcricoes.append({
-            "timestamp": datetime.now().isoformat(),
-            "origem": "sistema",
-            "texto": texto
-        })
-        logger.info(f"Mensagem do sistema registrada: {texto}")
-
-    def obter_historico_transcricoes(self) -> List[Dict]:
-        return self.transcricoes
-
-    def get_conversation_id(self) -> Optional[str]:
-        return self.conversation_id
-
-    def end_conversation(self) -> None:
-        logger.info(f"Conversa {self.conversation_id} finalizada")
-        self.conversation_id = None
-        self.transition_to(State.STANDBY)
-
-    # Novas funções adicionadas:
-    async def wait_for_state(self, state: State):
-        """Aguarda até que o estado especificado seja atingido."""
-        while self.current_state != state:
-            await asyncio.sleep(0.1)
-
-    async def wait_for_state_change(self):
-        """Aguarda até que ocorra uma mudança do estado atual."""
-        current_state = self.current_state
-        while self.current_state == current_state:
-            await asyncio.sleep(0.1)
+    return message
 
 
-README.md:
-# AudioSocket Simple
+ai/__init__.py:
 
-Aplicação simplificada para atendimento por IA em condomínios utilizando o protocolo AudioSocket do Asterisk.
 
-## Descrição
+ai/agents.py:
+import os
+from crewai import Agent
 
-Esta aplicação é responsável por gerenciar chamadas VoIP através do protocolo AudioSocket, realizando:
-
-1. Detecção de voz usando VAD (Voice Activity Detection)
-2. Transcrição do áudio usando Azure Speech Services
-3. Processamento de intenções via API de IA
-4. Síntese de voz para respostas
-5. Gerenciamento de turnos de conversa entre usuário e IA
-
-## Funcionalidades principais
-
-- Socket TCP para comunicação com o Asterisk via protocolo AudioSocket
-- Máquina de estados simplificada com 4 estados (STANDBY, USER_TURN, WAITING, IA_TURN)
-- Gerenciamento de IDs de conversa para manter o contexto entre mensagens
-- Mensagem de saudação automática configurável
-- Detecção de voz e silêncio usando webrtcvad
-- Transcrição de áudio através do Azure Speech Services
-- Comunicação com API de IA para processar mensagens do usuário
-- Síntese de voz usando Azure Speech Services
-- Interface web simples para debug e monitoramento
-
-## Requisitos
-
-- Python 3.8+
-- Biblioteca webrtcvad para detecção de voz
-- Azure Speech Services para transcrição e síntese de voz
-- API de IA para processamento de mensagens
-
-## Configuração
-
-1. Crie um arquivo `.env` com as seguintes variáveis de ambiente:
-   ```
-   AZURE_SPEECH_KEY=sua_chave_do_azure
-   AZURE_SPEECH_REGION=sua_regiao_do_azure
-   SILENCE_THRESHOLD_SECONDS=2.0
-   AI_API_URL=http://localhost:8000/messages
-   ```
-
-2. Instale as dependências:
-   ```
-   pip install -r requirements.txt
-   ```
-
-3. Personalize a mensagem de saudação no arquivo `config.json`:
-   ```json
-   {
-     "greeting": {
-       "message": "Condomínio Apoena, em que posso ajudar?",
-       "voice": "pt-BR-AntonioNeural",
-       "delay_seconds": 2
-     },
-     ...
-   }
-   ```
-
-## Execução
-
-### Servidor principal
-Inicie o servidor principal que lida com a chamada e inclui a interface web de debug:
-```
-python main.py
-```
-
-O servidor AudioSocket irá escutar em 127.0.0.1:8080 e a interface web de debug estará disponível em http://127.0.0.1:8081.
-
-### Cliente de teste com microfone
-Para testar o sistema com seu microfone local:
-```
-python microfone_client.py
-```
-
-Este cliente captura áudio do microfone do seu computador e o envia para o servidor AudioSocket, permitindo testar toda a funcionalidade sem precisar do Asterisk.
-
-Opções disponíveis:
-```
-python microfone_client.py --host 127.0.0.1 --port 8080
-```
-
-## Fluxo de conversação
-
-1. **Estado STANDBY**: 
-   - Sistema aguarda uma conexão
-   - Ao receber uma conexão, registra o ID da chamada
-   - Após um breve delay, envia a mensagem de saudação
-   
-2. **Estado USER_TURN**:
-   - Sistema ativa após a saudação
-   - Detecta quando o usuário começa a falar
-   - Captura o áudio até identificar silêncio
-   - Transcreve o áudio usando Azure Speech
-   
-3. **Estado WAITING**:
-   - Processa o texto transcrito
-   - Envia para a API de IA
-   
-4. **Estado IA_TURN**:
-   - Recebe a resposta da IA
-   - Sintetiza a fala usando Azure Speech
-   - Envia o áudio de resposta
-   - Retorna para USER_TURN ou STANDBY dependendo da resposta da IA
-
-## Interface de Debug
-
-A interface web de debug mostra:
-- Estado atual da chamada
-- ID da conversa ativa
-- Histórico de transcrições (usuário, IA e sistema)
-
-A página atualiza automaticamente a cada 2 segundos para mostrar o estado atual.
-
-## API de IA
-
-A aplicação se comunica com uma API de IA pela URL `http://localhost:8000/messages` que deve retornar uma resposta no formato:
-
-```json
-{
-    "content": {
-        "mensagem": "Texto da resposta da IA",
-        "dados": {
-            "intent_type": "tipo_intencao",
-            "outros_dados": "valores_relevantes"
-        },
-        "valid_for_action": false
-    },
-    "timestamp": "2025-04-15T19:17:59.052067",
-    "set_call_status": "USER_TURN"
-}
-```
-
-O campo `set_call_status` pode ter os valores: "USER_TURN", "WAITING", "IA_TURN" ou "STANDBY" para controlar o fluxo da conversa.
-
-audio_utils.py:
-#!/usr/bin/env python3
-# audio_utils.py - Utilitários para manipulação de áudio
-
-from pydub import AudioSegment
-from io import BytesIO
-import logging
-
-logger = logging.getLogger(__name__)
-
-def converter_bytes_para_wav(dados_slin, sample_rate=8000):
+def create_conversation_coordinator_agent() -> Agent:
     """
-    Converte bytes no formato SLIN para WAV.
-    
-    Args:
-        dados_slin: Bytes de áudio no formato SLIN
-        sample_rate: Taxa de amostragem (padrão: 8000 Hz)
-        
-    Returns:
-        Bytes WAV do áudio convertido
+    Cria e retorna um agente responsável por conversar com o usuário,
+    entender sua intenção e coletar todas as informações necessárias.
+    """
+    return Agent(
+        role="Concierge Virtual do Condomínio",
+        goal="Atender o usuário com empatia e eficiência, entendendo e completando sua solicitação",
+        backstory="""
+        Você é um concierge virtual treinado que conversa com pessoas no interfone da portaria de um condomínio.
+
+        Seu trabalho é:
+        - Entender se a pessoa deseja fazer uma entrega ou visita (obrigatório)
+        - Coletar todas as informações necessárias:
+          • Quem está no portão (visitor_name) (obrigatório)
+          • Número do apartamento de destino (apartment_number) (obrigatório)
+          • Nome do morador (resident_name) (obrigatório)
+        - Confirmar quando tudo estiver preenchido
+        - Jamais perguntar algo que o usuário já informou
+        - Nunca delegar sua responsabilidade de entender a solicitação
+        - Nunca confunda entrega com visita, se o morador diz que vai ou deseja ir em um apartamento, provável visita
+
+        Quando tiver todas as informações, apenas finalize a conversa com uma resposta simpática e diga que irá notificar o morador.
+        """,
+        verbose=False,
+        allow_delegation=False,
+    )
+
+
+def create_conversation_monitor_agent() -> Agent:
+    """
+    Cria e retorna um agente responsável por conversar com o usuário,
+    entender sua intenção e coletar todas as informações necessárias.
+    """
+    return Agent(
+        role="Gerente do Concierge Virtual do Condomínio",
+        goal="Supervisionar o concierge virtual e garantir que ele vai extrair todos os dados que precisamos do usuário",
+        backstory="""
+        Você é um gerente senior e sua função é garantir que os etendentes da portaria remota (concierge virtual) 
+        extraiam as informações corretas do usuário. Há relatos de que os atendentes estão chamando o morador, sem saber 
+        qual a intenção ou sequer perguntar o nome de quem está falando ou se deseja uma visita ou entrega. 
+
+        Seu trabalho é:
+        - Identificar primeiro a pessoa que está falando com o concierge virtual e qual sua intenção
+        - Somente pergunte o nome do morador e o apartamento se já houver identificado a interação e o nome do vistnate ou entregador
+        - Fiscalizar o trabalho do concierge virtual
+        - Garantir que ele vau coletar todas as informações necessárias:
+          • Identificar a intenção do usuário (intent_type) obrigatório: se é visita ou entrega
+          • Quem está no portão (visitor_name) (obrigatório)
+          • Número do apartamento de destino (apartment_number) (obrigatório)
+          • Nome do morador (resident_name) (obrigatório)
+        - Nunca finalize a conversa se qualquer campo estiver vazio.
+        - Se o nome do morador estiver vazio, você deve perguntar isso.
+
+        Fiscalize as respostas antes de serem enviadas ao usuário garantindo tudo que foi solicitado.
+        """,
+        verbose=False,
+        allow_delegation=False,
+    )
+
+
+ai/crew.py:
+from crewai import Crew
+
+from ai.state_manager import get_user_state, update_user_state, clear_user_state
+from ai.tasks import create_conversation_coordinator_task
+from ai.utils.intent_extractor import extract_intent_from_response
+from ai.models.intent import IntentData
+import json
+
+def process_user_message_with_coordinator(id: str, message: str) -> dict:
+    state = get_user_state(id)
+    history = "\n".join(state["history"])
+    partial_intent = state["intent"]
+
+    # Cria a Task com histórico e dados parciais
+    task = create_conversation_coordinator_task(
+        user_message=message,
+        conversation_history=history,
+        intent=partial_intent
+    )
+
+    crew = Crew(tasks=[task], verbose=True)
+    result = str(crew.kickoff())
+
+    # Tenta extrair novos dados (você pode usar OpenAI function calling ou Regex/JSON)
+    try:
+        dados_estruturados = extract_intent_from_response(result)
+        update_user_state(id, intent=dados_estruturados.get("dados"), message=f"Usuário: {message}\nResposta LLM: {dados_estruturados.get('mensagem')}")
+    except Exception:
+        update_user_state(id, message=f"Usuário: {dados_estruturados.get('mensagem')}")
+
+    return dados_estruturados
+
+
+ai/main.py:
+from ai.crew import process_user_message_with_coordinator
+
+
+
+def process_message(content: str, id: str = "anon") -> dict:
+    try:
+        return process_user_message_with_coordinator(id=id, message=content)
+            
+    except Exception as e:
+        print(f"Erro ao chamar CrewAI: {e}")
+        return "Estou enfrentando alguns problemas técnicos. Por favor, tente novamente mais tarde."
+
+
+ai/utils/__init__.py:
+
+
+ai/utils/intent_extractor.py:
+import json
+
+from guardrails import Guard
+from typing import Dict
+
+from humanfriendly.terminal import message
+
+from ai.models.intent import IntentData, IntentType, FullIntentResponse
+
+# =======================
+# 🛡️ RAILS SCHEMA (sem valid_for_action)
+# =======================
+
+INTENT_SCHEMA = """
+<rail version="0.1">
+<output>
+  <object>
+    <string name="mensagem" description="Mensagem a ser enviada ao usuário, clara e objetiva"/>
+    <object name="dados">
+      <string name="intent_type" format="enum" enum-values="visita,entrega,desconhecido"/>
+      <string name="visitor_name" on-fail-soft="noop"/>
+      <string name="apartment_number" on-fail-soft="noop"/>
+      <string name="resident_name" on-fail-soft="noop"/>
+    </object>
+  </object>
+</output>
+</rail>
+"""
+
+guard = Guard.for_rail_string(INTENT_SCHEMA)
+
+# =======================
+# 🔍 EXTRACTOR
+# =======================
+
+def extract_intent_from_response(response: str) -> Dict:
+    """
+    Valida e extrai os dados de intenção usando Guardrails e Pydantic.
+    Calcula valid_for_action com base nos campos preenchidos.
     """
     try:
-        audio_segment = AudioSegment(
-            data=bytes(dados_slin),
-            sample_width=2,  # 16 bits = 2 bytes
-            frame_rate=sample_rate,
-            channels=1
+        validated  = guard.parse(response)
+        raw = validated.validated_output
+
+        if not all(k in raw for k in ["mensagem", "dados"]):
+            raise ValueError("Resposta fora do padrão esperado")
+
+        if raw["dados"].get("intent_type") == "":
+            raw["dados"]["intent_type"] = IntentType.DESCONHECIDO
+
+        intent = IntentData(**raw["dados"])
+
+        # Cálculo de completude
+        campos_preenchidos = all([
+            intent.intent_type != IntentType.DESCONHECIDO,
+            intent.visitor_name.strip(),
+            intent.apartment_number.strip(),
+            intent.resident_name.strip()
+        ])
+
+        call_status = "USER_TURN"
+        if campos_preenchidos:
+            call_status = "WAITING"
+
+        result = FullIntentResponse(
+            mensagem=raw["mensagem"],
+            dados=intent,
+            valid_for_action=campos_preenchidos,
+            set_call_status=call_status
         )
-        buffer = BytesIO()
-        audio_segment.export(buffer, format='wav')
-        return buffer.getvalue()
+
+        return result.model_dump()
     except Exception as e:
-        logger.error(f"Erro ao converter bytes para WAV: {e}")
-        return None
-
-def converter_wav_para_slin(dados_wav, sample_rate=8000):
-    """
-    Converte bytes WAV para o formato SLIN.
-    
-    Args:
-        dados_wav: Bytes de áudio no formato WAV
-        sample_rate: Taxa de amostragem desejada (padrão: 8000 Hz)
-        
-    Returns:
-        Bytes SLIN do áudio convertido
-    """
-    try:
-        audio_segment = AudioSegment.from_file(BytesIO(dados_wav), format="wav")
-        audio_segment = audio_segment.set_frame_rate(sample_rate).set_channels(1).set_sample_width(2)
-        return audio_segment.raw_data
-    except Exception as e:
-        logger.error(f"Erro ao converter WAV para SLIN: {e}")
-        return None
-
-microfone_client.py:
-#!/usr/bin/env python3
-import socket, struct, threading, pyaudio, logging, uuid
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
-
-KIND_ID, KIND_SLIN, KIND_HANGUP = 0x01, 0x10, 0x00
-
-class AudioSocketClient:
-    def __init__(self, host='127.0.0.1', port=8080):
-        self.host, self.port = host, port
-        self.call_id = uuid.uuid4().bytes
-        self.sample_rate, self.channels, self.chunk_size = 8000, 1, 320
-        self.format = pyaudio.paInt16
-        self.running = False
-
-    def connect(self):
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.socket.connect((self.host, self.port))
-        self.socket.sendall(struct.pack('>B H', KIND_ID, len(self.call_id)) + self.call_id)
-        logging.info("Conectado ao servidor.")
-        self.running = True
-        threading.Thread(target=self.send_audio).start()
-        threading.Thread(target=self.receive_audio).start()
-
-    def send_audio(self):
-        p = pyaudio.PyAudio()
-        stream = p.open(format=self.format, channels=self.channels, rate=self.sample_rate, input=True, frames_per_buffer=self.chunk_size//2)
         try:
-            while self.running:
-                data = stream.read(self.chunk_size//2, exception_on_overflow=False)
-                self.socket.sendall(struct.pack('>B H', KIND_SLIN, len(data)) + data)
-        except Exception as e:
-            logging.error(f"Erro no envio de áudio: {e}")
-            self.running = False
-        stream.stop_stream()
-        stream.close()
-        p.terminate()
-
-    def receive_audio(self):
-        p = pyaudio.PyAudio()
-        stream = p.open(format=self.format, channels=self.channels, rate=self.sample_rate, output=True)
-        try:
-            while self.running:
-                header = self.socket.recv(3)
-                if not header: break
-                kind, length = header[0], struct.unpack('>H', header[1:3])[0]
-                payload = self.socket.recv(length)
-                if kind == KIND_SLIN:
-                    stream.write(payload)
-        except Exception as e:
-            logging.error(f"Erro no recebimento de áudio: {e}")
-            self.running = False
-        stream.stop_stream()
-        stream.close()
-        p.terminate()
-
-    def disconnect(self):
-        self.running = False
-        self.socket.sendall(struct.pack('>B H', KIND_HANGUP, 0))
-        self.socket.close()
-        logging.info("Desconectado do servidor.")
-
-if __name__ == "__main__":
-    client = AudioSocketClient()
-    try:
-        client.connect()
-        while client.running: pass
-    except KeyboardInterrupt:
-        client.disconnect()
-
-
-code_gpt.py:
-import os
-
-IGNORE = {'__pycache__', '.env', '.git', '.idea', 'audio'}
-
-def list_structure(base_path, prefix=""):
-    tree = ""
-    items = sorted(os.listdir(base_path))
-    for item in items:
-        if item in IGNORE:
-            continue
-        path = os.path.join(base_path, item)
-        if os.path.isdir(path):
-            tree += f"{prefix}{item}/\n"
-            tree += list_structure(path, prefix + "    ")
-        else:
-            tree += f"{prefix}{item}\n"
-    return tree
-
-def list_code_files(base_path):
-    code = ""
-    for root, dirs, files in os.walk(base_path):
-        dirs[:] = [d for d in dirs if d not in IGNORE]
-        for file in files:
-            if file in IGNORE:
-                continue
-            file_path = os.path.join(root, file)
-            rel_path = os.path.relpath(file_path, base_path)
-            code += f"\n{rel_path}:\n"
-            try:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    code += f.read() + "\n"
-            except Exception as e:
-                code += f"Erro ao ler arquivo: {e}\n"
-    return code
-
-def main():
-    base_path = "."
-    structure = list_structure(base_path)
-    code_files = list_code_files(base_path)
-
-    with open("code.txt", "w", encoding="utf-8") as f:
-        f.write("Estrutura do projeto:\n")
-        f.write(structure)
-        f.write("\nCódigo fonte:\n")
-        f.write(code_files)
-
-    print("Arquivo 'code.txt' criado com sucesso.")
-
-if __name__ == "__main__":
-    main()
-
-
-main.py:
-import asyncio
-import logging
-from dotenv import load_dotenv
-from state_machine import StateMachine
-from audiosocket_handler import iniciar_servidor_audiosocket
-
-load_dotenv()
-logging.basicConfig(level=logging.INFO)
-
-async def handle_client(reader, writer):
-    state_machine = StateMachine()
-    state_machine.start_new_conversation()
-
-    # Lendo a mensagem inicial KIND_ID (esperado pelo cliente)
-    try:
-        header = await reader.readexactly(3)
-        kind = header[0]
-        length = int.from_bytes(header[1:3], "big")
-        call_id = await reader.readexactly(length)
-
-        if kind != 0x01:  # KIND_ID
-            logging.error("Mensagem inicial não é KIND_ID. Fechando conexão.")
-            writer.close()
-            await writer.wait_closed()
-            return
-
-        logging.info(f"Recebido Call ID: {call_id.hex()}")
-
-        # Agora iniciar o servidor audio socket normalmente
-        await iniciar_servidor_audiosocket(reader, writer, state_machine)
-
-    except asyncio.IncompleteReadError:
-        logging.error("Cliente desconectado inesperadamente.")
-    except Exception as e:
-        logging.error(f"Erro inesperado: {e}")
-    finally:
-        writer.close()
-        await writer.wait_closed()
-
-async def main():
-    server = await asyncio.start_server(handle_client, '127.0.0.1', 8080)
-    logging.info("Servidor AudioSocket rodando em 127.0.0.1:8080")
-    async with server:
-        try:
-            await server.serve_forever()
-        except asyncio.CancelledError:
-            logging.info("Servidor está sendo encerrado.")
-
-if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("Servidor encerrado manualmente.")
-
-
-speech_service.py:
-import asyncio
-from io import BytesIO
-
-from audio_utils import converter_bytes_para_wav, converter_wav_para_slin
-import azure.cognitiveservices.speech as speechsdk
-import os
-from pydub import AudioSegment
-
-async def transcrever_audio_async(dados_audio_slin):
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, transcrever_audio, dados_audio_slin)
-
-async def sintetizar_fala_async(texto):
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, sintetizar_fala, texto)
-
-def transcrever_audio(dados_audio_slin):
-    audio_wav = converter_bytes_para_wav(dados_audio_slin, 8000)
-    if not audio_wav:
-        return None
-    audio_segment = AudioSegment.from_file(BytesIO(audio_wav), format="wav")
-    audio_segment = audio_segment.set_frame_rate(16000)
-    buffer = BytesIO()
-    audio_segment.export(buffer, format='wav')
-    audio_wav_16k = buffer.getvalue()
-    speech_config = speechsdk.SpeechConfig(subscription=os.getenv('AZURE_SPEECH_KEY'), region=os.getenv('AZURE_SPEECH_REGION'))
-    speech_config.speech_recognition_language = 'pt-BR'
-    audio_stream = speechsdk.audio.PushAudioInputStream()
-    audio_stream.write(audio_wav_16k)
-    audio_stream.close()
-    audio_config = speechsdk.audio.AudioConfig(stream=audio_stream)
-    recognizer = speechsdk.SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
-    result = recognizer.recognize_once()
-    return result.text if result.reason == speechsdk.ResultReason.RecognizedSpeech else None
-
-def sintetizar_fala(texto):
-    speech_config = speechsdk.SpeechConfig(subscription=os.getenv('AZURE_SPEECH_KEY'), region=os.getenv('AZURE_SPEECH_REGION'))
-    speech_config.speech_synthesis_language = 'pt-BR'
-    synthesizer = speechsdk.SpeechSynthesizer(speech_config=speech_config, audio_config=None)
-    result = synthesizer.speak_text_async(texto).get()
-    if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
-        return converter_wav_para_slin(result.audio_data, 8000)
-    return None
-
-
-
-state_machine.py:
-#!/usr/bin/env python3
-# state_machine.py - Máquina de estado simplificada para gerenciar turnos de conversa
-
-import enum
-import logging
-import uuid
-from datetime import datetime
-from typing import Callable, List, Dict, Optional
-import asyncio  # <-- necessário para as funções assíncronas adicionadas
-
-logger = logging.getLogger(__name__)
-
-
-class State(enum.Enum):
-    """Estados simplificados para a conversa entre usuário e IA."""
-    STANDBY = "STANDBY"  # Estado inicial, aguardando nova chamada
-    USER_TURN = "USER_TURN"  # Turno do usuário (sistema está ouvindo)
-    WAITING = "WAITING"  # Estado intermediário de processamento
-    IA_TURN = "IA_TURN"  # Turno da IA (sistema está respondendo)
-
-
-class StateMachine:
-    """
-    Máquina de estados simplificada para controlar o fluxo de comunicação
-    entre o usuário e a IA em uma chamada.
-    """
-
-    def __init__(self):
-        self.current_state = State.STANDBY
-        self.conversation_id = None
-        self.state_change_callbacks: Dict[State, List[Callable]] = {
-            state: [] for state in State
-        }
-        self.transcricoes = []
-        self.ultima_resposta = None
-        logger.info(f"Máquina de estados inicializada em {self.current_state}")
-
-    def get_state(self) -> State:
-        return self.current_state
-
-    def transition_to(self, new_state: State) -> None:
-        if new_state == self.current_state:
-            logger.debug(f"Ignorando transição redundante para {new_state}")
-            return
-
-        old_state = self.current_state
-        self.current_state = new_state
-        logger.info(f"Transição de estado: {old_state} -> {new_state}")
-
-        if old_state == State.IA_TURN and new_state == State.USER_TURN:
-            logger.info("*** IMPORTANTE: Transição de IA_TURN para USER_TURN - ativando escuta ***")
-            self.registrar_transcricao_sistema("Sistema ativou escuta - aguardando fala do usuário")
-        elif old_state == State.WAITING:
-            logger.info(f"Saindo do estado WAITING para {new_state}")
-            self.registrar_transcricao_sistema(f"Estado alterado: {old_state.value} -> {new_state.value}")
-        if new_state == State.USER_TURN:
-            logger.info("*** Sistema pronto para ouvir o usuário ***")
-
-        for callback in self.state_change_callbacks.get(new_state, []):
-            try:
-                callback()
-            except Exception as e:
-                logger.error(f"Erro no callback de mudança de estado: {e}")
-
-    def on_state_change(self, state: State, callback: Callable) -> None:
-        if state in self.state_change_callbacks:
-            self.state_change_callbacks[state].append(callback)
-
-    def is_user_turn(self) -> bool:
-        return self.current_state == State.USER_TURN
-
-    def is_ai_turn(self) -> bool:
-        return self.current_state == State.IA_TURN
-
-    def is_waiting(self) -> bool:
-        return self.current_state == State.WAITING
-
-    def is_standby(self) -> bool:
-        return self.current_state == State.STANDBY
-
-    def start_new_conversation(self, standby=False) -> str:
-        self.conversation_id = str(uuid.uuid4())
-        self.transcricoes = []
-        self.ultima_resposta = None
-
-        if not standby:
-            self.transition_to(State.USER_TURN)
-        else:
-            self.transition_to(State.STANDBY)
-
-        logger.info(f"Nova conversa iniciada com ID: {self.conversation_id}")
-        return self.conversation_id
-
-    def registrar_transcricao_usuario(self, texto: str) -> None:
-        self.transcricoes.append({
-            "timestamp": datetime.now().isoformat(),
-            "origem": "usuario",
-            "texto": texto
-        })
-        logger.info(f"Transcrição do usuário registrada: {texto}")
-
-    def registrar_transcricao_ia(self, texto: str, resposta_completa: Optional[Dict] = None) -> None:
-        self.transcricoes.append({
-            "timestamp": datetime.now().isoformat(),
-            "origem": "ia",
-            "texto": texto
-        })
-        self.ultima_resposta = resposta_completa
-        logger.info(f"Resposta da IA registrada: {texto}")
-
-    def registrar_transcricao_sistema(self, texto: str) -> None:
-        self.transcricoes.append({
-            "timestamp": datetime.now().isoformat(),
-            "origem": "sistema",
-            "texto": texto
-        })
-        logger.info(f"Mensagem do sistema registrada: {texto}")
-
-    def obter_historico_transcricoes(self) -> List[Dict]:
-        return self.transcricoes
-
-    def get_conversation_id(self) -> Optional[str]:
-        return self.conversation_id
-
-    def end_conversation(self) -> None:
-        logger.info(f"Conversa {self.conversation_id} finalizada")
-        self.conversation_id = None
-        self.transition_to(State.STANDBY)
-
-    # Novas funções adicionadas:
-    async def wait_for_state(self, state: State):
-        """Aguarda até que o estado especificado seja atingido."""
-        while self.current_state != state:
-            await asyncio.sleep(0.1)
-
-    async def wait_for_state_change(self):
-        """Aguarda até que ocorra uma mudança do estado atual."""
-        current_state = self.current_state
-        while self.current_state == current_state:
-            await asyncio.sleep(0.1)
-
-
-README.md:
-# AudioSocket Simple
-
-Aplicação simplificada para atendimento por IA em condomínios utilizando o protocolo AudioSocket do Asterisk.
-
-## Descrição
-
-Esta aplicação é responsável por gerenciar chamadas VoIP através do protocolo AudioSocket, realizando:
-
-1. Detecção de voz usando VAD (Voice Activity Detection)
-2. Transcrição do áudio usando Azure Speech Services
-3. Processamento de intenções via API de IA
-4. Síntese de voz para respostas
-5. Gerenciamento de turnos de conversa entre usuário e IA
-
-## Funcionalidades principais
-
-- Socket TCP para comunicação com o Asterisk via protocolo AudioSocket
-- Máquina de estados simplificada com 4 estados (STANDBY, USER_TURN, WAITING, IA_TURN)
-- Gerenciamento de IDs de conversa para manter o contexto entre mensagens
-- Mensagem de saudação automática configurável
-- Detecção de voz e silêncio usando webrtcvad
-- Transcrição de áudio através do Azure Speech Services
-- Comunicação com API de IA para processar mensagens do usuário
-- Síntese de voz usando Azure Speech Services
-- Interface web simples para debug e monitoramento
-
-## Requisitos
-
-- Python 3.8+
-- Biblioteca webrtcvad para detecção de voz
-- Azure Speech Services para transcrição e síntese de voz
-- API de IA para processamento de mensagens
-
-## Configuração
-
-1. Crie um arquivo `.env` com as seguintes variáveis de ambiente:
-   ```
-   AZURE_SPEECH_KEY=sua_chave_do_azure
-   AZURE_SPEECH_REGION=sua_regiao_do_azure
-   SILENCE_THRESHOLD_SECONDS=2.0
-   AI_API_URL=http://localhost:8000/messages
-   ```
-
-2. Instale as dependências:
-   ```
-   pip install -r requirements.txt
-   ```
-
-3. Personalize a mensagem de saudação no arquivo `config.json`:
-   ```json
-   {
-     "greeting": {
-       "message": "Condomínio Apoena, em que posso ajudar?",
-       "voice": "pt-BR-AntonioNeural",
-       "delay_seconds": 2
-     },
-     ...
-   }
-   ```
-
-## Execução
-
-### Servidor principal
-Inicie o servidor principal que lida com a chamada e inclui a interface web de debug:
-```
-python main.py
-```
-
-O servidor AudioSocket irá escutar em 127.0.0.1:8080 e a interface web de debug estará disponível em http://127.0.0.1:8081.
-
-### Cliente de teste com microfone
-Para testar o sistema com seu microfone local:
-```
-python microfone_client.py
-```
-
-Este cliente captura áudio do microfone do seu computador e o envia para o servidor AudioSocket, permitindo testar toda a funcionalidade sem precisar do Asterisk.
-
-Opções disponíveis:
-```
-python microfone_client.py --host 127.0.0.1 --port 8080
-```
-
-## Fluxo de conversação
-
-1. **Estado STANDBY**: 
-   - Sistema aguarda uma conexão
-   - Ao receber uma conexão, registra o ID da chamada
-   - Após um breve delay, envia a mensagem de saudação
-   
-2. **Estado USER_TURN**:
-   - Sistema ativa após a saudação
-   - Detecta quando o usuário começa a falar
-   - Captura o áudio até identificar silêncio
-   - Transcreve o áudio usando Azure Speech
-   
-3. **Estado WAITING**:
-   - Processa o texto transcrito
-   - Envia para a API de IA
-   
-4. **Estado IA_TURN**:
-   - Recebe a resposta da IA
-   - Sintetiza a fala usando Azure Speech
-   - Envia o áudio de resposta
-   - Retorna para USER_TURN ou STANDBY dependendo da resposta da IA
-
-## Interface de Debug
-
-A interface web de debug mostra:
-- Estado atual da chamada
-- ID da conversa ativa
-- Histórico de transcrições (usuário, IA e sistema)
-
-A página atualiza automaticamente a cada 2 segundos para mostrar o estado atual.
-
-## API de IA
-
-A aplicação se comunica com uma API de IA pela URL `http://localhost:8000/messages` que deve retornar uma resposta no formato:
-
-```json
-{
-    "content": {
-        "mensagem": "Texto da resposta da IA",
-        "dados": {
-            "intent_type": "tipo_intencao",
-            "outros_dados": "valores_relevantes"
-        },
-        "valid_for_action": false
-    },
-    "timestamp": "2025-04-15T19:17:59.052067",
-    "set_call_status": "USER_TURN"
-}
-```
-
-O campo `set_call_status` pode ter os valores: "USER_TURN", "WAITING", "IA_TURN" ou "STANDBY" para controlar o fluxo da conversa.
-
-audio_utils.py:
-#!/usr/bin/env python3
-# audio_utils.py - Utilitários para manipulação de áudio
-
-from pydub import AudioSegment
-from io import BytesIO
-import logging
-
-logger = logging.getLogger(__name__)
-
-def converter_bytes_para_wav(dados_slin, sample_rate=8000):
-    """
-    Converte bytes no formato SLIN para WAV.
-    
-    Args:
-        dados_slin: Bytes de áudio no formato SLIN
-        sample_rate: Taxa de amostragem (padrão: 8000 Hz)
-        
-    Returns:
-        Bytes WAV do áudio convertido
-    """
-    try:
-        audio_segment = AudioSegment(
-            data=bytes(dados_slin),
-            sample_width=2,  # 16 bits = 2 bytes
-            frame_rate=sample_rate,
-            channels=1
-        )
-        buffer = BytesIO()
-        audio_segment.export(buffer, format='wav')
-        return buffer.getvalue()
-    except Exception as e:
-        logger.error(f"Erro ao converter bytes para WAV: {e}")
-        return None
-
-def converter_wav_para_slin(dados_wav, sample_rate=8000):
-    """
-    Converte bytes WAV para o formato SLIN.
-    
-    Args:
-        dados_wav: Bytes de áudio no formato WAV
-        sample_rate: Taxa de amostragem desejada (padrão: 8000 Hz)
-        
-    Returns:
-        Bytes SLIN do áudio convertido
-    """
-    try:
-        audio_segment = AudioSegment.from_file(BytesIO(dados_wav), format="wav")
-        audio_segment = audio_segment.set_frame_rate(sample_rate).set_channels(1).set_sample_width(2)
-        return audio_segment.raw_data
-    except Exception as e:
-        logger.error(f"Erro ao converter WAV para SLIN: {e}")
-        return None
-
-microfone_client.py:
-#!/usr/bin/env python3
-import socket, struct, threading, pyaudio, logging, uuid
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
-
-KIND_ID, KIND_SLIN, KIND_HANGUP = 0x01, 0x10, 0x00
-
-class AudioSocketClient:
-    def __init__(self, host='127.0.0.1', port=8080):
-        self.host, self.port = host, port
-        self.call_id = uuid.uuid4().bytes
-        self.sample_rate, self.channels, self.chunk_size = 8000, 1, 320
-        self.format = pyaudio.paInt16
-        self.running = False
-
-    def connect(self):
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.socket.connect((self.host, self.port))
-        self.socket.sendall(struct.pack('>B H', KIND_ID, len(self.call_id)) + self.call_id)
-        logging.info("Conectado ao servidor.")
-        self.running = True
-        threading.Thread(target=self.send_audio).start()
-        threading.Thread(target=self.receive_audio).start()
-
-    def send_audio(self):
-        p = pyaudio.PyAudio()
-        stream = p.open(format=self.format, channels=self.channels, rate=self.sample_rate, input=True, frames_per_buffer=self.chunk_size//2)
-        try:
-            while self.running:
-                data = stream.read(self.chunk_size//2, exception_on_overflow=False)
-                self.socket.sendall(struct.pack('>B H', KIND_SLIN, len(data)) + data)
-        except Exception as e:
-            logging.error(f"Erro no envio de áudio: {e}")
-            self.running = False
-        stream.stop_stream()
-        stream.close()
-        p.terminate()
-
-    def receive_audio(self):
-        p = pyaudio.PyAudio()
-        stream = p.open(format=self.format, channels=self.channels, rate=self.sample_rate, output=True)
-        try:
-            while self.running:
-                header = self.socket.recv(3)
-                if not header: break
-                kind, length = header[0], struct.unpack('>H', header[1:3])[0]
-                payload = self.socket.recv(length)
-                if kind == KIND_SLIN:
-                    stream.write(payload)
-        except Exception as e:
-            logging.error(f"Erro no recebimento de áudio: {e}")
-            self.running = False
-        stream.stop_stream()
-        stream.close()
-        p.terminate()
-
-    def disconnect(self):
-        self.running = False
-        self.socket.sendall(struct.pack('>B H', KIND_HANGUP, 0))
-        self.socket.close()
-        logging.info("Desconectado do servidor.")
-
-if __name__ == "__main__":
-    client = AudioSocketClient()
-    try:
-        client.connect()
-        while client.running: pass
-    except KeyboardInterrupt:
-        client.disconnect()
-
-
-code_gpt.py:
-import os
-
-IGNORE = {'__pycache__', '.env', '.git', '.idea', 'audio'}
-
-def list_structure(base_path, prefix=""):
-    tree = ""
-    items = sorted(os.listdir(base_path))
-    for item in items:
-        if item in IGNORE:
-            continue
-        path = os.path.join(base_path, item)
-        if os.path.isdir(path):
-            tree += f"{prefix}{item}/\n"
-            tree += list_structure(path, prefix + "    ")
-        else:
-            tree += f"{prefix}{item}\n"
-    return tree
-
-def list_code_files(base_path):
-    code = ""
-    for root, dirs, files in os.walk(base_path):
-        dirs[:] = [d for d in dirs if d not in IGNORE]
-        for file in files:
-            if file in IGNORE:
-                continue
-            file_path = os.path.join(root, file)
-            rel_path = os.path.relpath(file_path, base_path)
-            code += f"\n{rel_path}:\n"
-            try:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    code += f.read() + "\n"
-            except Exception as e:
-                code += f"Erro ao ler arquivo: {e}\n"
-    return code
-
-def main():
-    base_path = "."
-    structure = list_structure(base_path)
-    code_files = list_code_files(base_path)
-
-    with open("code.txt", "w", encoding="utf-8") as f:
-        f.write("Estrutura do projeto:\n")
-        f.write(structure)
-        f.write("\nCódigo fonte:\n")
-        f.write(code_files)
-
-    print("Arquivo 'code.txt' criado com sucesso.")
-
-if __name__ == "__main__":
-    main()
-
-
-main.py:
-import asyncio
-import logging
-from dotenv import load_dotenv
-from state_machine import StateMachine
-from audiosocket_handler import iniciar_servidor_audiosocket
-
-load_dotenv()
-logging.basicConfig(level=logging.INFO)
-
-async def handle_client(reader, writer):
-    state_machine = StateMachine()
-    state_machine.start_new_conversation()
-
-    # Lendo a mensagem inicial KIND_ID (esperado pelo cliente)
-    try:
-        header = await reader.readexactly(3)
-        kind = header[0]
-        length = int.from_bytes(header[1:3], "big")
-        call_id = await reader.readexactly(length)
-
-        if kind != 0x01:  # KIND_ID
-            logging.error("Mensagem inicial não é KIND_ID. Fechando conexão.")
-            writer.close()
-            await writer.wait_closed()
-            return
-
-        logging.info(f"Recebido Call ID: {call_id.hex()}")
-
-        # Agora iniciar o servidor audio socket normalmente
-        await iniciar_servidor_audiosocket(reader, writer, state_machine)
-
-    except asyncio.IncompleteReadError:
-        logging.error("Cliente desconectado inesperadamente.")
-    except Exception as e:
-        logging.error(f"Erro inesperado: {e}")
-    finally:
-        writer.close()
-        await writer.wait_closed()
-
-async def main():
-    server = await asyncio.start_server(handle_client, '127.0.0.1', 8080)
-    logging.info("Servidor AudioSocket rodando em 127.0.0.1:8080")
-    async with server:
-        try:
-            await server.serve_forever()
-        except asyncio.CancelledError:
-            logging.info("Servidor está sendo encerrado.")
-
-if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("Servidor encerrado manualmente.")
-
-
-speech_service.py:
-import asyncio
-from io import BytesIO
-
-from audio_utils import converter_bytes_para_wav, converter_wav_para_slin
-import azure.cognitiveservices.speech as speechsdk
-import os
-from pydub import AudioSegment
-
-async def transcrever_audio_async(dados_audio_slin):
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, transcrever_audio, dados_audio_slin)
-
-async def sintetizar_fala_async(texto):
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, sintetizar_fala, texto)
-
-def transcrever_audio(dados_audio_slin):
-    audio_wav = converter_bytes_para_wav(dados_audio_slin, 8000)
-    if not audio_wav:
-        return None
-    audio_segment = AudioSegment.from_file(BytesIO(audio_wav), format="wav")
-    audio_segment = audio_segment.set_frame_rate(16000)
-    buffer = BytesIO()
-    audio_segment.export(buffer, format='wav')
-    audio_wav_16k = buffer.getvalue()
-    speech_config = speechsdk.SpeechConfig(subscription=os.getenv('AZURE_SPEECH_KEY'), region=os.getenv('AZURE_SPEECH_REGION'))
-    speech_config.speech_recognition_language = 'pt-BR'
-    audio_stream = speechsdk.audio.PushAudioInputStream()
-    audio_stream.write(audio_wav_16k)
-    audio_stream.close()
-    audio_config = speechsdk.audio.AudioConfig(stream=audio_stream)
-    recognizer = speechsdk.SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
-    result = recognizer.recognize_once()
-    return result.text if result.reason == speechsdk.ResultReason.RecognizedSpeech else None
-
-def sintetizar_fala(texto):
-    speech_config = speechsdk.SpeechConfig(subscription=os.getenv('AZURE_SPEECH_KEY'), region=os.getenv('AZURE_SPEECH_REGION'))
-    speech_config.speech_synthesis_language = 'pt-BR'
-    synthesizer = speechsdk.SpeechSynthesizer(speech_config=speech_config, audio_config=None)
-    result = synthesizer.speak_text_async(texto).get()
-    if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
-        return converter_wav_para_slin(result.audio_data, 8000)
-    return None
+            message_of_non_understanding = json.loads(message)
+        except:
+            message_of_non_understanding = {
+                "mensagem": "Não foi possível identificar sua intenção e seu nome, por favor, me informe seu nome e o que deseja.",
+                "dados": {
+                    "intent_type": "",
+                    "visitor_name": "",
+                    "apartment_number": "",
+                    "resident_name": "",
+                    "set_call_status": "USER_TURN"
+                }
+            }
+        message_of_non_understanding['dados']['intent_type'] = IntentType.DESCONHECIDO
+        message_of_non_understanding['valid_for_action'] = False
+        return message_of_non_understanding
+
+
+ai/models/intent.py:
+from enum import Enum
+from typing import Optional
+
+from pydantic import BaseModel, Field
+
+# =======================
+# 🧠 MODELO DE INTENÇÃO
+# =======================
+
+class IntentType(str, Enum):
+    VISITA = "visita"
+    ENTREGA = "entrega"
+    DESCONHECIDO = "desconhecido"
+
+class IntentData(BaseModel):
+    intent_type: IntentType = Field(..., description="Tipo de intenção identificada")
+    visitor_name: str = Field("", description="Nome da pessoa no portão")
+    apartment_number: str = Field("", description="Número do apartamento de destino")
+    resident_name: str = Field("", description="Nome do morador/destinatário")
+
+class FullIntentResponse(BaseModel):
+    mensagem: str
+    dados: IntentData
+    valid_for_action: bool
+    set_call_status: Optional[str] = "USER_TURN"
+
+
+ai/models/__init__.py:
 
