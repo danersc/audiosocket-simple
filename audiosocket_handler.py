@@ -92,8 +92,6 @@ async def processar_audio(audio_queue, vad, state_machine, writer):
 
                 if audio_data:
                     state_machine.transition_to(State.WAITING)
-                    logger.info("Áudio capturado completo, iniciando transcrição.")
-
                     texto = await transcrever_audio_async(audio_data)
 
                     if not texto:
@@ -101,45 +99,35 @@ async def processar_audio(audio_queue, vad, state_machine, writer):
                         state_machine.transition_to(State.USER_TURN)
                         continue
 
-                    logger.info(f"Texto transcrito: {texto}")
-
                     resposta = await enviar_mensagem_para_ia(texto, state_machine.get_conversation_id())
                     mensagem = extrair_mensagem_da_resposta(resposta)
                     proximo_estado = obter_estado_chamada(resposta)
-
-                    logger.info(f"Mensagem recebida da IA: {mensagem}")
-                    logger.info(f"Estado sugerido pela API: {proximo_estado}")
 
                     if mensagem:
                         audio_resposta = await sintetizar_fala_async(mensagem)
                         if audio_resposta and len(audio_resposta) > 0:
                             state_machine.transition_to(State.IA_TURN)
-                            logger.info("Enviando áudio sintetizado ao usuário.")
                             await enviar_audio(writer, audio_resposta, origem="IA Response")
                             await asyncio.sleep(0.5)
-                        else:
-                            logger.warning("Resposta de áudio vazia.")
 
                     if proximo_estado:
-                        logger.info(f"Aplicando estado '{proximo_estado}' após envio completo do áudio.")
                         state_machine.transition_to(State[proximo_estado])
                     else:
                         state_machine.transition_to(State.USER_TURN)
 
-async def iniciar_servidor_audiosocket(reader, writer, state_machine):
+async def iniciar_servidor_audiosocket_visitante(reader, writer, state_machine, call_id):
     vad = webrtcvad.Vad(2)
     audio_queue = asyncio.Queue()
     caminho_audio_espera = os.path.join('audio', 'waiting.slin')
 
-    logger.info("Iniciando síntese de áudio para mensagem de saudação.")
+    logger.info(f"[VISITANTE] Iniciando atendimento. Call ID: {call_id}")
+
     greeting_audio = await sintetizar_fala_async("Condomínio Apoena, em que posso ajudar?")
     if greeting_audio:
         state_machine.transition_to(State.IA_TURN)
-        logger.info("Enviando áudio da mensagem inicial ao cliente.")
         await enviar_audio(writer, greeting_audio, origem="Greeting")
         await asyncio.sleep(0.5)
 
-    # ✅ Alteração chave aqui: a transição para USER_TURN ocorre APENAS após envio completo do áudio
     state_machine.transition_to(State.USER_TURN)
 
     await asyncio.gather(
@@ -147,3 +135,28 @@ async def iniciar_servidor_audiosocket(reader, writer, state_machine):
         processar_audio(audio_queue, vad, state_machine, writer),
         monitorar_waiting(state_machine, writer, caminho_audio_espera)
     )
+
+async def iniciar_servidor_audiosocket_morador(reader, writer, state_machine, call_id):
+    vad = webrtcvad.Vad(2)
+    audio_queue = asyncio.Queue()
+
+    logger.info(f"[MORADOR] Iniciando atendimento. Call ID: {call_id}")
+
+    # TODO A partir do ID, buscar uma mensagem para o morador (Pode ser uma pergunta sobre se autoriza ou não o visitante a entrar)
+    mensagem_para_morador = None#obter_mensagem_para_morador(call_id)
+    if not mensagem_para_morador:
+        mensagem_para_morador = "Olá, você recebeu uma solicitação no interfone. Autoriza?"
+
+    audio_mensagem = await sintetizar_fala_async(mensagem_para_morador)
+    if audio_mensagem:
+        state_machine.transition_to(State.IA_TURN)
+        await enviar_audio(writer, audio_mensagem, origem="Mensagem para Morador")
+        await asyncio.sleep(0.5)
+
+    state_machine.transition_to(State.USER_TURN)
+
+    # TODO Adicionar tratamento a partir da resposta do morador
+    # await asyncio.gather(
+    #     receber_audio_morador(reader, state_machine, audio_queue, call_id),
+    #     processar_audio_morador(audio_queue, vad, state_machine, writer, call_id)
+    # )
