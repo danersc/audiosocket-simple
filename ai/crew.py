@@ -84,6 +84,19 @@ def process_user_message_with_coordinator(id: str, message: str) -> dict:
         state = get_user_state(id)
         partial_intent = state["intent"]
         resultado = validar_intent_com_fuzzy(partial_intent)
+
+        if resultado["status"] == "inválido":
+            # Zera apt/resident
+            partial_intent["apartment_number"] = ""
+            partial_intent["resident_name"] = ""
+
+            # E retorne algo como:
+            return {
+                "mensagem": "Não encontrei esse apartamento/morador. Poderia repetir?",
+                "dados": partial_intent,
+                "valid_for_action": False
+            }
+
         print(resultado)
 
         # gostaria de poder retornar um audio e também poder mudar o statuse o turno da chamada atual diretamente por aqui

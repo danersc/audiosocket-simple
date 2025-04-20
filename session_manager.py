@@ -105,3 +105,8 @@ class SessionManager:
         session.history.append(f"[Resident] {text}")
 
         session.flow.on_resident_message(session_id, text, self)
+
+    def end_session(self, session_id: str):
+        if session_id in self.sessions:
+            del self.sessions[session_id]
+            logger.info(f"[SessionManager] Sessão {session_id} finalizada e removida.")

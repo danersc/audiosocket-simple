@@ -6,7 +6,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(mess
 KIND_ID, KIND_SLIN, KIND_HANGUP = 0x01, 0x10, 0x00
 
 class AudioSocketClient:
-    def __init__(self, host='127.0.0.1', port=8080):
+    def __init__(self, host='18.231.197.181', port=8080):
         self.host, self.port = host, port
         self.call_id = uuid.uuid4().bytes
         self.sample_rate, self.channels, self.chunk_size = 8000, 1, 320

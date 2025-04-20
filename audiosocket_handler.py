@@ -113,14 +113,7 @@ async def enviar_mensagens_visitante(writer: asyncio.StreamWriter, call_id: str)
                 await enviar_audio(writer, audio_resposta, origem="Visitante")
 
 
-async def iniciar_servidor_audiosocket_visitante(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
-    """
-    Função chamada ao aceitar conexão do 'visitante'.
-    Lê o 'call_id' do cabeçalho inicial e dispara duas tarefas:
-      1) receber_audio_visitante
-      2) enviar_mensagens_visitante
-    """
-    # Ler o call_id
+async def iniciar_servidor_audiosocket_visitante(reader, writer):
     header = await reader.readexactly(3)
     kind = header[0]
     length = int.from_bytes(header[1:3], "big")
@@ -129,10 +122,14 @@ async def iniciar_servidor_audiosocket_visitante(reader: asyncio.StreamReader, w
 
     logger.info(f"[VISITANTE] Recebido Call ID: {call_id}")
 
-    # Garante que a sessão existe
     session_manager.create_session(call_id)
 
-    # Executa as duas tarefas em paralelo
+    # SAUDAÇÃO:
+    session_manager.enfileirar_visitor(
+        call_id,
+        "Olá, seja bem-vindo! Em que posso ajudar?"
+    )
+
     task1 = asyncio.create_task(receber_audio_visitante(reader, call_id))
     task2 = asyncio.create_task(enviar_mensagens_visitante(writer, call_id))
 
@@ -220,10 +217,7 @@ async def enviar_mensagens_morador(writer: asyncio.StreamWriter, call_id: str):
                 await enviar_audio(writer, audio_resposta, origem="Morador")
 
 
-async def iniciar_servidor_audiosocket_morador(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
-    """
-    Versão para o morador
-    """
+async def iniciar_servidor_audiosocket_morador(reader, writer):
     header = await reader.readexactly(3)
     kind = header[0]
     length = int.from_bytes(header[1:3], "big")
@@ -233,6 +227,12 @@ async def iniciar_servidor_audiosocket_morador(reader: asyncio.StreamReader, wri
     logger.info(f"[MORADOR] Recebido Call ID: {call_id}")
 
     session_manager.create_session(call_id)
+
+    # SAUDAÇÃO MORADOR:
+    session_manager.enfileirar_resident(
+        call_id,
+        "Olá, morador! Você está em ligação com a portaria inteligente."
+    )
 
     task1 = asyncio.create_task(receber_audio_morador(reader, call_id))
     task2 = asyncio.create_task(enviar_mensagens_morador(writer, call_id))
