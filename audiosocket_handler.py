@@ -1,203 +1,249 @@
+# audiosocket_handler.py
+
 import asyncio
 import logging
-import webrtcvad
 import struct
-from speech_service import transcrever_audio_async, sintetizar_fala_async
-from ai_service import enviar_mensagem_para_ia, extrair_mensagem_da_resposta, obter_estado_chamada
-from state_machine import State
 import os
 
-KIND_SLIN = 0x10
+import webrtcvad
+
+from speech_service import transcrever_audio_async, sintetizar_fala_async
+from session_manager import SessionManager  # Importamos o SessionManager
+
+# Caso você use um "StateMachine" separado, pode remover ou adaptar:
+# from state_machine import State
+
 logger = logging.getLogger(__name__)
 
+# Identificador do formato SLIN
+KIND_SLIN = 0x10
 
-async def limpar_buffer_reader(reader):
+# Podemos instanciar um SessionManager aqui como singleton/global.
+# Se preferir criar em outro lugar, adapte.
+session_manager = SessionManager()
+
+
+async def enviar_audio(writer: asyncio.StreamWriter, dados_audio: bytes, origem="desconhecida"):
     """
-    Esvazia o buffer do reader imediatamente, evitando dados antigos acumulados.
+    Envia dados de áudio (SLIN) ao cliente via 'writer'.
     """
-    total_bytes_descartados = 0
-    try:
-        while not reader.at_eof():
-            data = await asyncio.wait_for(reader.read(1024), timeout=0.01)
-            if not data:
-                break
-            total_bytes_descartados += len(data)
-            logger.debug(f"Limpando buffer: {len(data)} bytes descartados.")
-    except (asyncio.TimeoutError, asyncio.IncompleteReadError):
-        pass
-
-    logger.info(f"Total descartado nesta limpeza do buffer: {total_bytes_descartados} bytes")
-    return total_bytes_descartados
-
-async def receber_audio(reader, state_machine, audio_queue):
-    try:
-        while True:
-            if not state_machine.is_user_turn():
-                # Fora do USER_TURN: mantenha o buffer limpo constantemente
-                bytes_descartados = await limpar_buffer_reader(reader)
-                logger.info(f"[BUFFER LIMPEZA] Bytes descartados: {bytes_descartados}")
-                await asyncio.sleep(0.01)  # Intervalo curto para não sobrecarregar CPU
-                continue
-
-            # Se chegou aqui, é USER_TURN: leia normalmente
-            header = await reader.readexactly(3)
-            kind = header[0]
-            length = int.from_bytes(header[1:3], 'big')
-            audio_chunk = await reader.readexactly(length)
-
-            logger.info(f"[BUFFER LEITURA] Chunk recebido (USER_TURN): {len(audio_chunk)} bytes")
-
-            if kind == KIND_SLIN and len(audio_chunk) == 320:
-                await audio_queue.put(audio_chunk)
-            else:
-                logger.warning(f"Chunk inválido recebido: kind={kind}, length={len(audio_chunk)}")
-
-    except asyncio.IncompleteReadError:
-        logger.info("Cliente desconectado")
-    except Exception as e:
-        logger.error(f"Erro ao receber áudio: {e}")
-
-
-async def enviar_audio(writer, dados_audio, origem="desconhecida"):
-    logger.info(f"Iniciando envio de áudio sintetizado (origem: {origem}), tamanho total: {len(dados_audio)} bytes")
+    logger.info(f"[{origem}] Enviando áudio de {len(dados_audio)} bytes.")
     chunk_size = 320
     for i in range(0, len(dados_audio), chunk_size):
-        chunk = dados_audio[i:i + chunk_size]
-        if chunk:
-            writer.write(struct.pack('>B H', KIND_SLIN, len(chunk)) + chunk)
-            await writer.drain()
-            await asyncio.sleep(0.02)
-    logger.info(f"Envio de áudio concluído (origem: {origem})")
+        chunk = dados_audio[i : i + chunk_size]
+        header = struct.pack(">B H", KIND_SLIN, len(chunk))
+        writer.write(header + chunk)
+        await writer.drain()
+        # Pequeno atraso para não encher o buffer do lado do Asterisk
+        await asyncio.sleep(0.02)
 
-async def enviar_audio_em_loop(writer, caminho_audio):
-    with open(caminho_audio, 'rb') as f:
-        dados_audio = f.read()
 
-    chunk_size = 320
-    try:
-        while True:
-            for i in range(0, len(dados_audio), chunk_size):
-                chunk = dados_audio[i:i + chunk_size]
-                if chunk:
-                    writer.write(struct.pack('>B H', KIND_SLIN, len(chunk)) + chunk)
-                    await writer.drain()
-                    await asyncio.sleep(0.02)
-    except asyncio.CancelledError:
-        logger.info("Áudio de espera cancelado.")
-
-async def monitorar_waiting(state_machine, writer, caminho_audio):
-    waiting_task = None
-    while True:
-        await state_machine.wait_for_state(State.WAITING)
-        logger.info("Estado WAITING detectado, aguardando 3 segundos antes de iniciar áudio de espera.")
-        try:
-            await asyncio.wait_for(state_machine.wait_for_state_change(), timeout=3.0)
-            logger.info("Estado WAITING terminou antes dos 3 segundos, áudio de espera não será iniciado.")
-        except asyncio.TimeoutError:
-            if state_machine.is_waiting():
-                logger.info("Timeout atingido em WAITING, iniciando áudio de espera.")
-                waiting_task = asyncio.create_task(enviar_audio_em_loop(writer, caminho_audio))
-
-                await state_machine.wait_for_state_change()
-                if waiting_task:
-                    waiting_task.cancel()
-                    waiting_task = None
-
-async def processar_audio(audio_queue, vad, state_machine, writer):
+async def receber_audio_visitante(reader: asyncio.StreamReader, call_id: str):
+    """
+    Tarefa que fica lendo o áudio do visitante, detecta quando ele fala (usando VAD)
+    e chama `session_manager.process_visitor_text(...)` ao fim de cada frase.
+    """
+    vad = webrtcvad.Vad(2)  # Agressivo 0-3
     frames = []
     is_speaking = False
     silence_start = None
 
     while True:
-        chunk = await audio_queue.get()
-        is_voice = vad.is_speech(chunk, 8000)
+        try:
+            header = await reader.readexactly(3)
+        except asyncio.IncompleteReadError:
+            logger.info(f"[{call_id}] Visitante desconectou (EOF).")
+            break
 
-        if is_voice:
-            frames.append(chunk)
-            is_speaking = True
-            silence_start = None
-        elif is_speaking:
-            if silence_start is None:
-                silence_start = asyncio.get_event_loop().time()
-            elif asyncio.get_event_loop().time() - silence_start > 2.0:
-                is_speaking = False
-                audio_data = b''.join(frames)
-                frames.clear()
+        if not header:
+            logger.info(f"[{call_id}] Nenhum dado de header, encerrando.")
+            break
 
-                if audio_data:
-                    state_machine.transition_to(State.WAITING)
-                    texto = await transcrever_audio_async(audio_data)
+        kind = header[0]
+        length = int.from_bytes(header[1:3], "big")
 
-                    if not texto:
-                        logger.warning("Nenhuma transcrição obtida.")
-                        state_machine.transition_to(State.USER_TURN)
-                        continue
-
-                    resposta = await enviar_mensagem_para_ia(texto, state_machine.get_conversation_id())
-                    # está falhando aqui:
-                    mensagem = extrair_mensagem_da_resposta(resposta)
-                    proximo_estado = obter_estado_chamada(resposta)
-
-                    if mensagem:
-                        audio_resposta = await sintetizar_fala_async(mensagem)
-                        if audio_resposta and len(audio_resposta) > 0:
-                            state_machine.transition_to(State.IA_TURN)
-                            await enviar_audio(writer, audio_resposta, origem="IA Response")
-                            await asyncio.sleep(0.5)
-
-                    if proximo_estado:
-                        state_machine.transition_to(State[proximo_estado])
+        audio_chunk = await reader.readexactly(length)
+        if kind == KIND_SLIN and len(audio_chunk) == 320:
+            # Avalia VAD
+            is_voice = vad.is_speech(audio_chunk, 8000)
+            if is_voice:
+                frames.append(audio_chunk)
+                if not is_speaking:
+                    is_speaking = True
+                    logger.debug(f"[{call_id}] Visitante começou a falar.")
+                silence_start = None
+            else:
+                if is_speaking:
+                    # Já estava falando e agora está em silêncio
+                    if silence_start is None:
+                        silence_start = asyncio.get_event_loop().time()
                     else:
-                        state_machine.transition_to(State.USER_TURN)
+                        # Se passou 2s em silêncio, considera que a fala terminou
+                        if (asyncio.get_event_loop().time() - silence_start) > 2.0:
+                            is_speaking = False
+                            logger.debug(f"[{call_id}] Visitante parou de falar.")
+                            audio_data = b"".join(frames)
+                            frames.clear()
 
-async def iniciar_servidor_audiosocket_visitante(reader, writer, state_machine, call_id):
+                            # Transcrever
+                            texto = await transcrever_audio_async(audio_data)
+                            if texto:
+                                session_manager.process_visitor_text(call_id, texto)
+        else:
+            logger.warning(f"[{call_id}] Chunk inválido do visitante. kind={kind}, len={len(audio_chunk)}")
+
+    # Ao sair, encerrou a conexão
+    logger.info(f"[{call_id}] receber_audio_visitante terminou.")
+
+
+async def enviar_mensagens_visitante(writer: asyncio.StreamWriter, call_id: str):
+    """
+    Tarefa que periodicamente verifica se há mensagens pendentes
+    para o visitante no SessionManager, sintetiza e envia via áudio.
+    """
+    while True:
+        await asyncio.sleep(0.2)  # Ajuste conforme sua necessidade
+
+        # Tenta buscar uma mensagem
+        msg = session_manager.get_message_for_visitor(call_id)
+        if msg is not None:
+            logger.info(f"[{call_id}] Enviando mensagem ao visitante: {msg}")
+            audio_resposta = await sintetizar_fala_async(msg)
+            if audio_resposta:
+                await enviar_audio(writer, audio_resposta, origem="Visitante")
+
+
+async def iniciar_servidor_audiosocket_visitante(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+    """
+    Função chamada ao aceitar conexão do 'visitante'.
+    Lê o 'call_id' do cabeçalho inicial e dispara duas tarefas:
+      1) receber_audio_visitante
+      2) enviar_mensagens_visitante
+    """
+    # Ler o call_id
+    header = await reader.readexactly(3)
+    kind = header[0]
+    length = int.from_bytes(header[1:3], "big")
+    call_id_bytes = await reader.readexactly(length)
+    call_id = call_id_bytes.hex()
+
+    logger.info(f"[VISITANTE] Recebido Call ID: {call_id}")
+
+    # Garante que a sessão existe
+    session_manager.create_session(call_id)
+
+    # Executa as duas tarefas em paralelo
+    task1 = asyncio.create_task(receber_audio_visitante(reader, call_id))
+    task2 = asyncio.create_task(enviar_mensagens_visitante(writer, call_id))
+
+    # Espera até que alguma das tarefas termine (em geral, quando visitante desconecta).
+    done, pending = await asyncio.wait([task1, task2], return_when=asyncio.FIRST_COMPLETED)
+    logger.info(f"[{call_id}] Alguma tarefa finalizou, vamos encerrar as duas...")
+
+    # Cancela a outra
+    for t in pending:
+        t.cancel()
+    await asyncio.gather(*pending, return_exceptions=True)
+
+    logger.info(f"[{call_id}] Encerrando conexão do visitante.")
+    writer.close()
+    await writer.wait_closed()
+
+
+# ------------------------
+# MORADOR
+# ------------------------
+
+async def receber_audio_morador(reader: asyncio.StreamReader, call_id: str):
+    """
+    Versão equivalente para o morador
+    """
     vad = webrtcvad.Vad(2)
-    audio_queue = asyncio.Queue()
-    caminho_audio_espera = os.path.join('audio', 'waiting.slin')
+    frames = []
+    is_speaking = False
+    silence_start = None
 
-    logger.info(f"[VISITANTE] Iniciando atendimento. Call ID: {call_id}")
+    while True:
+        try:
+            header = await reader.readexactly(3)
+        except asyncio.IncompleteReadError:
+            logger.info(f"[{call_id}] Morador desconectou (EOF).")
+            break
 
-    greeting_audio = await sintetizar_fala_async("Condomínio Apoena, por favor informe o que deseja, se entrega ou visita.")
-    if greeting_audio:
-        state_machine.transition_to(State.IA_TURN)
-        await enviar_audio(writer, greeting_audio, origem="Greeting")
-        await asyncio.sleep(0.5)
+        if not header:
+            logger.info(f"[{call_id}] Nenhum dado de header, encerrando (morador).")
+            break
 
-    state_machine.transition_to(State.USER_TURN)
+        kind = header[0]
+        length = int.from_bytes(header[1:3], "big")
 
-    await limpar_buffer_reader(reader)
+        audio_chunk = await reader.readexactly(length)
+        if kind == KIND_SLIN and len(audio_chunk) == 320:
+            is_voice = vad.is_speech(audio_chunk, 8000)
+            if is_voice:
+                frames.append(audio_chunk)
+                if not is_speaking:
+                    is_speaking = True
+                    logger.debug(f"[{call_id}] Morador começou a falar.")
+                silence_start = None
+            else:
+                if is_speaking:
+                    if silence_start is None:
+                        silence_start = asyncio.get_event_loop().time()
+                    else:
+                        if (asyncio.get_event_loop().time() - silence_start) > 2.0:
+                            is_speaking = False
+                            logger.debug(f"[{call_id}] Morador parou de falar.")
+                            audio_data = b"".join(frames)
+                            frames.clear()
 
-    logger.info(f"[STATUS] Aplicando estado 'USER_TURN'")
+                            texto = await transcrever_audio_async(audio_data)
+                            if texto:
+                                session_manager.process_resident_text(call_id, texto)
+        else:
+            logger.warning(f"[{call_id}] Chunk inválido do morador. kind={kind}, len={len(audio_chunk)}")
 
-    await asyncio.gather(
-        receber_audio(reader, state_machine, audio_queue),
-        processar_audio(audio_queue, vad, state_machine, writer),
-        monitorar_waiting(state_machine, writer, caminho_audio_espera)
-    )
+    logger.info(f"[{call_id}] receber_audio_morador terminou.")
 
-async def iniciar_servidor_audiosocket_morador(reader, writer, state_machine, call_id):
-    vad = webrtcvad.Vad(2)
-    audio_queue = asyncio.Queue()
 
-    logger.info(f"[MORADOR] Iniciando atendimento. Call ID: {call_id}")
+async def enviar_mensagens_morador(writer: asyncio.StreamWriter, call_id: str):
+    """
+    Fica buscando mensagens para o morador, sintetiza e envia via áudio.
+    """
+    while True:
+        await asyncio.sleep(0.2)
+        msg = session_manager.get_message_for_resident(call_id)
+        if msg is not None:
+            logger.info(f"[{call_id}] Enviando mensagem ao morador: {msg}")
+            audio_resposta = await sintetizar_fala_async(msg)
+            if audio_resposta:
+                await enviar_audio(writer, audio_resposta, origem="Morador")
 
-    # TODO A partir do ID, buscar uma mensagem para o morador (Pode ser uma pergunta sobre se autoriza ou não o visitante a entrar)
-    mensagem_para_morador = None#obter_mensagem_para_morador(call_id)
-    if not mensagem_para_morador:
-        mensagem_para_morador = "Olá, você recebeu uma solicitação no interfone. Autoriza?"
 
-    audio_mensagem = await sintetizar_fala_async(mensagem_para_morador)
-    if audio_mensagem:
-        state_machine.transition_to(State.IA_TURN)
-        await enviar_audio(writer, audio_mensagem, origem="Mensagem para Morador")
-        await asyncio.sleep(0.5)
+async def iniciar_servidor_audiosocket_morador(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+    """
+    Versão para o morador
+    """
+    header = await reader.readexactly(3)
+    kind = header[0]
+    length = int.from_bytes(header[1:3], "big")
+    call_id_bytes = await reader.readexactly(length)
+    call_id = call_id_bytes.hex()
 
-    state_machine.transition_to(State.USER_TURN)
+    logger.info(f"[MORADOR] Recebido Call ID: {call_id}")
 
-    await limpar_buffer_reader(reader)
+    session_manager.create_session(call_id)
 
-    # TODO Adicionar tratamento a partir da resposta do morador
-    # await asyncio.gather(
-    #     receber_audio_morador(reader, state_machine, audio_queue, call_id),
-    #     processar_audio_morador(audio_queue, vad, state_machine, writer, call_id)
-    # )
+    task1 = asyncio.create_task(receber_audio_morador(reader, call_id))
+    task2 = asyncio.create_task(enviar_mensagens_morador(writer, call_id))
+
+    done, pending = await asyncio.wait([task1, task2], return_when=asyncio.FIRST_COMPLETED)
+    logger.info(f"[{call_id}] Alguma tarefa (morador) finalizou, encerrar.")
+
+    for t in pending:
+        t.cancel()
+    await asyncio.gather(*pending, return_exceptions=True)
+
+    writer.close()
+    await writer.wait_closed()
+    logger.info(f"[{call_id}] Conexão do morador encerrada.")

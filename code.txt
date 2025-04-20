@@ -17,6 +17,593 @@ ai/
 ai_service.py
 audio_utils.py
 audiosocket_handler.py
+code.txt
+code_gpt.py
+config.json
+data/
+    apartamentos.json
+main.py
+microfone_client.py
+requirements.txt
+services/
+    __init__.py
+    amqp_service.py
+session_manager.py
+speech_service.py
+state_machine.py
+
+Código fonte:
+
+ai_service.py:
+import logging
+from ai.main import process_message  # Importação direta do CrewAI
+from typing import Dict, Any, Optional
+
+logger = logging.getLogger(__name__)
+
+async def enviar_mensagem_para_ia(texto: str, conversation_id: str) -> Dict[str, Any]:
+    """
+    Agora chama diretamente o CrewAI ao invés da API externa.
+    """
+    try:
+        logger.info("=" * 50)
+        logger.info(f"Chamando CrewAI diretamente com mensagem: {texto}")
+        resposta = process_message(content=texto, id=conversation_id)
+
+        logger.info("=" * 50)
+        logger.info(f"Resposta recebida do CrewAI:")
+        logger.info(resposta)
+        logger.info("=" * 50)
+
+        # Adiciona o timestamp que antes era retornado pela API
+        resposta_com_timestamp = {
+            "content": resposta,
+            "timestamp": ""
+        }
+
+        return resposta_com_timestamp
+
+    except Exception as e:
+        logger.error(f"Erro ao comunicar com CrewAI diretamente: {e}")
+        return {
+            "content": {
+                "mensagem": "Desculpe, não consegui processar sua solicitação no momento.",
+                "dados": {},
+                "valid_for_action": False,
+                "set_call_status": "USER_TURN"
+            },
+            "timestamp": ""
+        }
+
+def extrair_mensagem_da_resposta(resposta: Dict[str, Any]) -> str:
+    return resposta.get("content", {}).get("mensagem", "")
+
+def obter_estado_chamada(resposta: Dict[str, Any]) -> Optional[str]:
+    return resposta.get("content", {}).get("set_call_status")
+
+
+audiosocket_handler.py:
+# audiosocket_handler.py
+
+import asyncio
+import logging
+import struct
+import os
+
+import webrtcvad
+
+from speech_service import transcrever_audio_async, sintetizar_fala_async
+from session_manager import SessionManager  # Importamos o SessionManager
+
+# Caso você use um "StateMachine" separado, pode remover ou adaptar:
+# from state_machine import State
+
+logger = logging.getLogger(__name__)
+
+# Identificador do formato SLIN
+KIND_SLIN = 0x10
+
+# Podemos instanciar um SessionManager aqui como singleton/global.
+# Se preferir criar em outro lugar, adapte.
+session_manager = SessionManager()
+
+
+async def enviar_audio(writer: asyncio.StreamWriter, dados_audio: bytes, origem="desconhecida"):
+    """
+    Envia dados de áudio (SLIN) ao cliente via 'writer'.
+    """
+    logger.info(f"[{origem}] Enviando áudio de {len(dados_audio)} bytes.")
+    chunk_size = 320
+    for i in range(0, len(dados_audio), chunk_size):
+        chunk = dados_audio[i : i + chunk_size]
+        header = struct.pack(">B H", KIND_SLIN, len(chunk))
+        writer.write(header + chunk)
+        await writer.drain()
+        # Pequeno atraso para não encher o buffer do lado do Asterisk
+        await asyncio.sleep(0.02)
+
+
+async def receber_audio_visitante(reader: asyncio.StreamReader, call_id: str):
+    """
+    Tarefa que fica lendo o áudio do visitante, detecta quando ele fala (usando VAD)
+    e chama `session_manager.process_visitor_text(...)` ao fim de cada frase.
+    """
+    vad = webrtcvad.Vad(2)  # Agressivo 0-3
+    frames = []
+    is_speaking = False
+    silence_start = None
+
+    while True:
+        try:
+            header = await reader.readexactly(3)
+        except asyncio.IncompleteReadError:
+            logger.info(f"[{call_id}] Visitante desconectou (EOF).")
+            break
+
+        if not header:
+            logger.info(f"[{call_id}] Nenhum dado de header, encerrando.")
+            break
+
+        kind = header[0]
+        length = int.from_bytes(header[1:3], "big")
+
+        audio_chunk = await reader.readexactly(length)
+        if kind == KIND_SLIN and len(audio_chunk) == 320:
+            # Avalia VAD
+            is_voice = vad.is_speech(audio_chunk, 8000)
+            if is_voice:
+                frames.append(audio_chunk)
+                if not is_speaking:
+                    is_speaking = True
+                    logger.debug(f"[{call_id}] Visitante começou a falar.")
+                silence_start = None
+            else:
+                if is_speaking:
+                    # Já estava falando e agora está em silêncio
+                    if silence_start is None:
+                        silence_start = asyncio.get_event_loop().time()
+                    else:
+                        # Se passou 2s em silêncio, considera que a fala terminou
+                        if (asyncio.get_event_loop().time() - silence_start) > 2.0:
+                            is_speaking = False
+                            logger.debug(f"[{call_id}] Visitante parou de falar.")
+                            audio_data = b"".join(frames)
+                            frames.clear()
+
+                            # Transcrever
+                            texto = await transcrever_audio_async(audio_data)
+                            if texto:
+                                session_manager.process_visitor_text(call_id, texto)
+        else:
+            logger.warning(f"[{call_id}] Chunk inválido do visitante. kind={kind}, len={len(audio_chunk)}")
+
+    # Ao sair, encerrou a conexão
+    logger.info(f"[{call_id}] receber_audio_visitante terminou.")
+
+
+async def enviar_mensagens_visitante(writer: asyncio.StreamWriter, call_id: str):
+    """
+    Tarefa que periodicamente verifica se há mensagens pendentes
+    para o visitante no SessionManager, sintetiza e envia via áudio.
+    """
+    while True:
+        await asyncio.sleep(0.2)  # Ajuste conforme sua necessidade
+
+        # Tenta buscar uma mensagem
+        msg = session_manager.get_message_for_visitor(call_id)
+        if msg is not None:
+            logger.info(f"[{call_id}] Enviando mensagem ao visitante: {msg}")
+            audio_resposta = await sintetizar_fala_async(msg)
+            if audio_resposta:
+                await enviar_audio(writer, audio_resposta, origem="Visitante")
+
+
+async def iniciar_servidor_audiosocket_visitante(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+    """
+    Função chamada ao aceitar conexão do 'visitante'.
+    Lê o 'call_id' do cabeçalho inicial e dispara duas tarefas:
+      1) receber_audio_visitante
+      2) enviar_mensagens_visitante
+    """
+    # Ler o call_id
+    header = await reader.readexactly(3)
+    kind = header[0]
+    length = int.from_bytes(header[1:3], "big")
+    call_id_bytes = await reader.readexactly(length)
+    call_id = call_id_bytes.hex()
+
+    logger.info(f"[VISITANTE] Recebido Call ID: {call_id}")
+
+    # Garante que a sessão existe
+    session_manager.create_session(call_id)
+
+    # Executa as duas tarefas em paralelo
+    task1 = asyncio.create_task(receber_audio_visitante(reader, call_id))
+    task2 = asyncio.create_task(enviar_mensagens_visitante(writer, call_id))
+
+    # Espera até que alguma das tarefas termine (em geral, quando visitante desconecta).
+    done, pending = await asyncio.wait([task1, task2], return_when=asyncio.FIRST_COMPLETED)
+    logger.info(f"[{call_id}] Alguma tarefa finalizou, vamos encerrar as duas...")
+
+    # Cancela a outra
+    for t in pending:
+        t.cancel()
+    await asyncio.gather(*pending, return_exceptions=True)
+
+    logger.info(f"[{call_id}] Encerrando conexão do visitante.")
+    writer.close()
+    await writer.wait_closed()
+
+
+# ------------------------
+# MORADOR
+# ------------------------
+
+async def receber_audio_morador(reader: asyncio.StreamReader, call_id: str):
+    """
+    Versão equivalente para o morador
+    """
+    vad = webrtcvad.Vad(2)
+    frames = []
+    is_speaking = False
+    silence_start = None
+
+    while True:
+        try:
+            header = await reader.readexactly(3)
+        except asyncio.IncompleteReadError:
+            logger.info(f"[{call_id}] Morador desconectou (EOF).")
+            break
+
+        if not header:
+            logger.info(f"[{call_id}] Nenhum dado de header, encerrando (morador).")
+            break
+
+        kind = header[0]
+        length = int.from_bytes(header[1:3], "big")
+
+        audio_chunk = await reader.readexactly(length)
+        if kind == KIND_SLIN and len(audio_chunk) == 320:
+            is_voice = vad.is_speech(audio_chunk, 8000)
+            if is_voice:
+                frames.append(audio_chunk)
+                if not is_speaking:
+                    is_speaking = True
+                    logger.debug(f"[{call_id}] Morador começou a falar.")
+                silence_start = None
+            else:
+                if is_speaking:
+                    if silence_start is None:
+                        silence_start = asyncio.get_event_loop().time()
+                    else:
+                        if (asyncio.get_event_loop().time() - silence_start) > 2.0:
+                            is_speaking = False
+                            logger.debug(f"[{call_id}] Morador parou de falar.")
+                            audio_data = b"".join(frames)
+                            frames.clear()
+
+                            texto = await transcrever_audio_async(audio_data)
+                            if texto:
+                                session_manager.process_resident_text(call_id, texto)
+        else:
+            logger.warning(f"[{call_id}] Chunk inválido do morador. kind={kind}, len={len(audio_chunk)}")
+
+    logger.info(f"[{call_id}] receber_audio_morador terminou.")
+
+
+async def enviar_mensagens_morador(writer: asyncio.StreamWriter, call_id: str):
+    """
+    Fica buscando mensagens para o morador, sintetiza e envia via áudio.
+    """
+    while True:
+        await asyncio.sleep(0.2)
+        msg = session_manager.get_message_for_resident(call_id)
+        if msg is not None:
+            logger.info(f"[{call_id}] Enviando mensagem ao morador: {msg}")
+            audio_resposta = await sintetizar_fala_async(msg)
+            if audio_resposta:
+                await enviar_audio(writer, audio_resposta, origem="Morador")
+
+
+async def iniciar_servidor_audiosocket_morador(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+    """
+    Versão para o morador
+    """
+    header = await reader.readexactly(3)
+    kind = header[0]
+    length = int.from_bytes(header[1:3], "big")
+    call_id_bytes = await reader.readexactly(length)
+    call_id = call_id_bytes.hex()
+
+    logger.info(f"[MORADOR] Recebido Call ID: {call_id}")
+
+    session_manager.create_session(call_id)
+
+    task1 = asyncio.create_task(receber_audio_morador(reader, call_id))
+    task2 = asyncio.create_task(enviar_mensagens_morador(writer, call_id))
+
+    done, pending = await asyncio.wait([task1, task2], return_when=asyncio.FIRST_COMPLETED)
+    logger.info(f"[{call_id}] Alguma tarefa (morador) finalizou, encerrar.")
+
+    for t in pending:
+        t.cancel()
+    await asyncio.gather(*pending, return_exceptions=True)
+
+    writer.close()
+    await writer.wait_closed()
+    logger.info(f"[{call_id}] Conexão do morador encerrada.")
+
+
+requirements.txt:
+aiohappyeyeballs==2.6.1
+aiohttp==3.11.16
+aiosignal==1.3.2
+alembic==1.15.2
+annotated-types==0.7.0
+anyio==4.9.0
+appdirs==1.4.4
+arrow==1.3.0
+asgiref==3.8.1
+asttokens==3.0.0
+asyncio==3.4.3
+attrs==25.3.0
+auth0-python==4.7.2
+azure-cognitiveservices-speech==1.41.1
+backoff==2.2.1
+bcrypt==4.3.0
+beautifulsoup4==4.13.4
+blinker==1.9.0
+build==1.2.2.post1
+cachetools==5.5.2
+certifi==2025.1.31
+cffi==1.17.1
+charset-normalizer==3.4.1
+chroma-hnswlib==0.7.6
+chromadb==0.5.23
+click==8.1.8
+cohere==5.15.0
+colorama==0.4.6
+coloredlogs==15.0.1
+crewai==0.108.0
+crewai-tools==0.38.1
+cryptography==43.0.3
+dataclasses-json==0.6.7
+decorator==5.2.1
+Deprecated==1.2.18
+deprecation==2.1.0
+diff-match-patch==20230430
+distro==1.9.0
+docker==7.1.0
+docstring_parser==0.16
+durationpy==0.9
+embedchain==0.1.128
+et_xmlfile==2.0.0
+executing==2.2.0
+Faker==25.9.2
+fastapi==0.115.9
+fastavro==1.10.0
+filelock==3.18.0
+flatbuffers==25.2.10
+fqdn==1.5.1
+frozenlist==1.5.0
+fsspec==2025.3.2
+google-auth==2.39.0
+googleapis-common-protos==1.70.0
+gptcache==0.1.44
+griffe==0.36.9
+grpcio==1.71.0
+grpcio-tools==1.71.0
+guardrails-ai==0.6.5
+guardrails-api-client==0.4.0a1
+guardrails_hub_types==0.0.4
+h11==0.14.0
+h2==4.2.0
+hpack==4.1.0
+httpcore==1.0.8
+httptools==0.6.4
+httpx==0.27.2
+httpx-sse==0.4.0
+huggingface-hub==0.30.2
+humanfriendly==10.0
+hyperframe==6.1.0
+idna==3.10
+importlib_metadata==8.6.1
+importlib_resources==6.5.2
+instructor==1.7.9
+ipython==9.1.0
+ipython_pygments_lexers==1.1.1
+isoduration==20.11.0
+jedi==0.19.2
+Jinja2==3.1.6
+jiter==0.8.2
+json5==0.12.0
+json_repair==0.41.1
+jsonpatch==1.33
+jsonpickle==4.0.5
+jsonpointer==3.0.0
+jsonref==1.1.0
+jsonschema==4.23.0
+jsonschema-specifications==2024.10.1
+kubernetes==32.0.1
+lancedb==0.21.2
+langchain==0.3.23
+langchain-cohere==0.3.5
+langchain-community==0.3.21
+langchain-core==0.3.52
+langchain-experimental==0.3.4
+langchain-openai==0.2.14
+langchain-text-splitters==0.3.8
+langsmith==0.3.31
+litellm==1.60.2
+lxml==4.9.4
+Mako==1.3.10
+markdown-it-py==3.0.0
+MarkupSafe==3.0.2
+marshmallow==3.26.1
+matplotlib-inline==0.1.7
+mdurl==0.1.2
+mem0ai==0.1.91
+mmh3==5.1.0
+monotonic==1.6
+mpmath==1.3.0
+multidict==6.4.3
+mypy-extensions==1.0.0
+networkx==3.4.2
+nodeenv==1.9.1
+numpy==2.2.4
+oauthlib==3.2.2
+onnxruntime==1.21.0
+openai==1.75.0
+openpyxl==3.1.5
+opentelemetry-api==1.32.1
+opentelemetry-exporter-otlp-proto-common==1.32.1
+opentelemetry-exporter-otlp-proto-grpc==1.32.1
+opentelemetry-exporter-otlp-proto-http==1.32.1
+opentelemetry-instrumentation==0.53b1
+opentelemetry-instrumentation-asgi==0.53b1
+opentelemetry-instrumentation-fastapi==0.53b1
+opentelemetry-proto==1.32.1
+opentelemetry-sdk==1.32.1
+opentelemetry-semantic-conventions==0.53b1
+opentelemetry-util-http==0.53b1
+orjson==3.10.16
+overrides==7.7.0
+packaging==24.2
+pandas==2.2.3
+parso==0.8.4
+pdfminer.six==20250327
+pdfplumber==0.11.6
+pexpect==4.9.0
+pika==1.3.2
+pillow==11.2.1
+portalocker==2.10.1
+posthog==3.25.0
+prompt_toolkit==3.0.51
+propcache==0.3.1
+protobuf==5.29.4
+psycopg2-binary==2.9.10
+ptyprocess==0.7.0
+pure_eval==0.2.3
+pyarrow==19.0.1
+pyasn1==0.6.1
+pyasn1_modules==0.4.2
+PyAudio==0.2.14
+pycparser==2.22
+pydantic==2.11.3
+pydantic-settings==2.8.1
+pydantic_core==2.33.1
+pydash==7.0.7
+pydub==0.25.1
+Pygments==2.19.1
+PyJWT==2.10.1
+pypdf==5.4.0
+pypdfium2==4.30.1
+PyPika==0.48.9
+pyproject_hooks==1.2.0
+pyright==1.1.399
+pysbd==0.3.4
+python-dateutil==2.9.0.post0
+python-dotenv==1.0.1
+pytube==15.0.0
+pytz==2024.2
+pyvis==0.3.2
+PyYAML==6.0.2
+qdrant-client==1.13.3
+redis==5.2.1
+referencing==0.36.2
+regex==2024.11.6
+requests==2.32.3
+requests-oauthlib==2.0.0
+requests-toolbelt==1.0.0
+rfc3339-validator==0.1.4
+rfc3986-validator==0.1.1
+rich==13.9.4
+rpds-py==0.24.0
+rsa==4.9.1
+rstr==3.2.2
+schema==0.7.7
+semver==3.0.4
+shellingham==1.5.4
+six==1.17.0
+sniffio==1.3.1
+soupsieve==2.6
+SQLAlchemy==2.0.40
+stack-data==0.6.3
+starlette==0.45.3
+sympy==1.13.3
+tabulate==0.9.0
+tenacity==9.1.2
+tiktoken==0.9.0
+tokenizers==0.20.3
+tomli==2.2.1
+tomli_w==1.2.0
+tqdm==4.66.5
+traitlets==5.14.3
+typer==0.15.2
+types-python-dateutil==2.9.0.20241206
+types-requests==2.32.0.20250328
+typing-inspect==0.9.0
+typing-inspection==0.4.0
+typing_extensions==4.12.2
+tzdata==2025.2
+uri-template==1.3.0
+urllib3==2.0.7
+uv==0.6.14
+uvicorn==0.34.1
+uvloop==0.21.0
+watchfiles==1.0.5
+wcwidth==0.2.13
+webcolors==24.11.1
+webrtcvad==2.0.10
+websocket-client==1.8.0
+websockets==12.0
+wrapt==1.17.2
+wsproto==1.2.0
+yarl==1.20.0
+zipp==3.21.0
+zstandard==0.23.0
+
+
+config.json:
+{
+    "greeting": {
+        "message": "Condomínio Apoena, em que posso ajudar?",
+        "voice": "pt-BR-AntonioNeural",
+        "delay_seconds": 2
+    },
+    "system": {
+        "default_state": "STANDBY",
+        "silence_threshold_seconds": 2.0,
+        "max_transaction_time_seconds": 30
+    },
+    "audio": {
+        "sample_rate": 8000,
+        "channels": 1,
+        "format": "SLIN",
+        "chunk_size": 320
+    }
+}
+
+code.txt:
+Estrutura do projeto:
+README.md
+ai/
+    __init__.py
+    agents.py
+    crew.py
+    main.py
+    models/
+        __init__.py
+        intent.py
+    state_manager.py
+    tasks.py
+    tools.py
+    utils/
+        __init__.py
+        intent_extractor.py
+ai_service.py
+audio_utils.py
+audiosocket_handler.py
 code_gpt.py
 config.json
 data/
@@ -1788,6 +2375,1567 @@ def process_user_message_with_coordinator(id: str, message: str) -> dict:
         partial_intent = state["intent"]
         resultado = validar_intent_com_fuzzy(partial_intent)
         print(resultado)
+
+        return dados_estruturados
+
+
+
+
+
+
+
+
+
+    # # Cria a Task com histórico e dados parciais
+    # task = create_conversation_coordinator_task(
+    #     user_message=message,
+    #     conversation_history=history,
+    #     intent=partial_intent
+    # )
+    #
+    # crew = Crew(tasks=[task], verbose=True)
+    # result = str(crew.kickoff())
+    #
+    # # Tenta extrair novos dados (você pode usar OpenAI function calling ou Regex/JSON)
+    # try:
+    #     dados_estruturados = extract_intent_from_response(result)
+    #     update_user_state(id, intent=dados_estruturados.get("dados"), message=f"Usuário: {message}\nResposta LLM: {dados_estruturados.get('mensagem')}")
+    # except Exception:
+    #     update_user_state(id, message=f"Usuário: {dados_estruturados.get('mensagem')}")
+    #
+    # return dados_estruturados
+
+
+ai/main.py:
+from ai.crew import process_user_message_with_coordinator
+
+
+
+def process_message(content: str, id: str = "anon") -> dict:
+    try:
+        return process_user_message_with_coordinator(id=id, message=content)
+            
+    except Exception as e:
+        print(f"Erro ao chamar CrewAI: {e}")
+        return "Estou enfrentando alguns problemas técnicos. Por favor, tente novamente mais tarde."
+
+
+ai/utils/__init__.py:
+
+
+ai/utils/intent_extractor.py:
+import json
+
+from guardrails import Guard
+from typing import Dict
+
+from humanfriendly.terminal import message
+
+from ai.models.intent import IntentData, IntentType, FullIntentResponse
+
+# =======================
+# 🛡️ RAILS SCHEMA (sem valid_for_action)
+# =======================
+
+INTENT_SCHEMA = """
+<rail version="0.1">
+<output>
+  <object>
+    <string name="mensagem" description="Mensagem a ser enviada ao usuário, clara e objetiva"/>
+    <object name="dados">
+      <string name="intent_type" format="enum" enum-values="visita,entrega,desconhecido"/>
+      <string name="interlocutor_name" on-fail-soft="noop"/>
+      <string name="apartment_number" on-fail-soft="noop"/>
+      <string name="resident_name" on-fail-soft="noop"/>
+    </object>
+  </object>
+</output>
+</rail>
+"""
+
+guard = Guard.for_rail_string(INTENT_SCHEMA)
+
+# =======================
+# 🔍 EXTRACTOR
+# =======================
+
+def extract_intent_from_response(response: str) -> Dict:
+    """
+    Valida e extrai os dados de intenção usando Guardrails e Pydantic.
+    Calcula valid_for_action com base nos campos preenchidos.
+    """
+    try:
+        validated  = guard.parse(response)
+        raw = validated.validated_output
+
+        if not all(k in raw for k in ["mensagem", "dados"]):
+            raise ValueError("Resposta fora do padrão esperado")
+
+        if raw["dados"].get("intent_type") == "":
+            raw["dados"]["intent_type"] = IntentType.DESCONHECIDO
+
+        intent = IntentData(**raw["dados"])
+
+        # Cálculo de completude
+        campos_preenchidos = all([
+            intent.intent_type != IntentType.DESCONHECIDO,
+            intent.interlocutor_name.strip(),
+            intent.apartment_number.strip(),
+            intent.resident_name.strip()
+        ])
+
+        call_status = "USER_TURN"
+        if campos_preenchidos:
+            call_status = "WAITING"
+
+        result = FullIntentResponse(
+            mensagem=raw["mensagem"],
+            dados=intent,
+            valid_for_action=campos_preenchidos,
+            set_call_status=call_status
+        )
+
+        return result.model_dump()
+    except Exception as e:
+        try:
+            message_of_non_understanding = json.loads(message)
+        except:
+            message_of_non_understanding = {
+                "mensagem": "Não foi possível identificar sua intenção e seu nome, por favor, me informe seu nome e o que deseja.",
+                "dados": {
+                    "intent_type": "",
+                    "interlocutor_name": "",
+                    "apartment_number": "",
+                    "resident_name": "",
+                    "set_call_status": "USER_TURN"
+                }
+            }
+        message_of_non_understanding['dados']['intent_type'] = IntentType.DESCONHECIDO
+        message_of_non_understanding['valid_for_action'] = False
+        return message_of_non_understanding
+
+
+ai/models/intent.py:
+from enum import Enum
+from typing import Optional
+
+from pydantic import BaseModel, Field
+
+# =======================
+# 🧠 MODELO DE INTENÇÃO
+# =======================
+
+class IntentType(str, Enum):
+    VISITA = "visita"
+    ENTREGA = "entrega"
+    DESCONHECIDO = "desconhecido"
+
+class IntentData(BaseModel):
+    intent_type: IntentType = Field(..., description="Tipo de intenção identificada")
+    interlocutor_name: str = Field("", description="Nome da pessoa no portão")
+    apartment_number: str = Field("", description="Número do apartamento de destino")
+    resident_name: str = Field("", description="Nome do morador/destinatário")
+
+class FullIntentResponse(BaseModel):
+    mensagem: str
+    dados: IntentData
+    valid_for_action: bool
+    set_call_status: Optional[str] = "USER_TURN"
+
+
+ai/models/__init__.py:
+
+
+data/apartamentos.json:
+[
+  {
+    "apartment_number": "101",
+    "residents": ["Ana Beatriz Silva", "João Pedro Silva"],
+    "voip_number": "sip:101@condominio.local"
+  },
+  {
+    "apartment_number": "102",
+    "residents": ["Carlos Oliveira"],
+    "voip_number": "sip:102@condominio.local"
+  },
+  {
+    "apartment_number": "201",
+    "residents": ["Fernanda Souza", "Tiago Souza"],
+    "voip_number": "sip:201@condominio.local"
+  },
+  {
+    "apartment_number": "202",
+    "residents": ["Mariana Costa"],
+    "voip_number": "sip:202@condominio.local"
+  },
+  {
+    "apartment_number": "301",
+    "residents": ["Rodrigo Lima", "Letícia Lima"],
+    "voip_number": "sip:301@condominio.local"
+  },
+  {
+    "apartment_number": "302",
+    "residents": ["Lucas Martins"],
+    "voip_number": "sip:302@condominio.local"
+  },
+  {
+    "apartment_number": "401",
+    "residents": ["Paula Fernandes"],
+    "voip_number": "sip:401@condominio.local"
+  },
+  {
+    "apartment_number": "402",
+    "residents": ["Eduardo Almeida", "Bruna Almeida"],
+    "voip_number": "sip:402@condominio.local"
+  },
+  {
+    "apartment_number": "501",
+    "residents": ["Renata Oliveira", "Daner dos Reis"],
+    "voip_number": "1003035"
+  },
+  {
+    "apartment_number": "502",
+    "residents": ["Vinícius Barros", "Marina Barros"],
+    "voip_number": "sip:502@condominio.local"
+  }
+]
+
+
+services/__init__.py:
+
+
+services/amqp_service.py:
+
+import pika
+import json
+import logging
+
+def enviar_msg_autorizacao_morador(payload):
+    connection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
+    channel = connection.channel()
+
+    channel.queue_declare(queue='fila_autorizacao')
+
+    channel.basic_publish(
+        exchange='',
+        routing_key='fila_autorizacao',
+        body=json.dumps(payload)
+    )
+
+    logging.info(f"Mensagem AMQP enviada: {payload}")
+    connection.close()
+
+
+
+session_manager.py:
+import asyncio
+import logging
+from typing import Dict, Optional, List
+from uuid import uuid4
+
+# Se você quiser reutilizar a "Crew" desde já, import aqui
+# from ai.crew import process_user_message_with_coordinator
+
+logger = logging.getLogger(__name__)
+
+
+class SessionData:
+    """
+    Armazena dados relacionados a uma sessão/call_id específico.
+    """
+    def __init__(self, session_id: str):
+        self.session_id = session_id
+
+        # Estados (simples) de cada lado:
+        self.visitor_state = "USER_TURN"   # ex.: "USER_TURN", "WAITING", "IA_TURN", etc.
+        self.resident_state = "STANDBY"
+
+        # Histórico textual (somente para debug ou logs, se quiser)
+        self.history: List[str] = []
+
+        # Fila de mensagens pendentes para cada lado
+        self.visitor_queue: asyncio.Queue = asyncio.Queue()
+        self.resident_queue: asyncio.Queue = asyncio.Queue()
+
+        # Exemplo de “intent_data” se quiser armazenar dados que a IA extrair:
+        self.intent_data = {}
+
+
+class SessionManager:
+    """
+    Gerencia todas as sessões ativas (visitor/morador).
+    Cada sessão é identificada por um session_id (call_id).
+    """
+    def __init__(self):
+        # Dicionário: session_id -> SessionData
+        self.sessions: Dict[str, SessionData] = {}
+
+    def create_session(self, session_id: Optional[str] = None) -> SessionData:
+        """
+        Cria (ou obtém) uma sessão a partir de um ID.
+        Se não for fornecido, gera um novo via uuid4().
+        """
+        if not session_id:
+            session_id = str(uuid4())
+
+        if session_id not in self.sessions:
+            session_data = SessionData(session_id)
+            self.sessions[session_id] = session_data
+            logger.info(f"[SessionManager] Criada nova sessão: {session_id}")
+        else:
+            logger.debug(f"[SessionManager] Sessão {session_id} já existe.")
+
+        return self.sessions[session_id]
+
+    def get_session(self, session_id: str) -> Optional[SessionData]:
+        """
+        Retorna a SessionData correspondente ao ID, ou None se não existir.
+        """
+        return self.sessions.get(session_id)
+
+    def process_visitor_text(self, session_id: str, text: str):
+        """
+        Recebe o texto transcrito do visitante e decide o que fazer.
+        (No futuro, aqui chamaremos a IA/Crew, etc.)
+        """
+        session = self.get_session(session_id)
+        if not session:
+            session = self.create_session(session_id)
+
+        # Log e histórico
+        logger.info(f"[Session {session_id}] Visitor disse: {text}")
+        session.history.append(f"Visitor: {text}")
+
+        # Exemplo simples: responder "OK, entendido" para o visitor
+        # e enfileirar essa resposta.
+        resposta_rapida = "OK, entendido. (Exemplo - pois ainda não chamamos a IA)"
+        session.visitor_queue.put_nowait(resposta_rapida)
+
+        # Se quiser simular algo pro morador:
+        # session.resident_queue.put_nowait("O visitante disse algo...")
+
+        # Se quiser alterar estado do visitor:
+        session.visitor_state = "WAITING"
+
+    def process_resident_text(self, session_id: str, text: str):
+        """
+        Recebe o texto transcrito do morador.
+        (Aqui no futuro vamos decidir se "libera" ou "não libera", etc.)
+        """
+        session = self.get_session(session_id)
+        if not session:
+            session = self.create_session(session_id)
+
+        logger.info(f"[Session {session_id}] Resident disse: {text}")
+        session.history.append(f"Resident: {text}")
+
+        # Exemplo simples de resposta
+        resposta_rapida = "Entendi, morador. (Exemplo - sem IA)"
+        session.resident_queue.put_nowait(resposta_rapida)
+
+        # Muda estado
+        session.resident_state = "WAITING"
+
+    def get_message_for_visitor(self, session_id: str) -> Optional[str]:
+        """
+        Retorna a próxima mensagem pendente ao VISITANTE, ou None se não houver.
+        """
+        session = self.get_session(session_id)
+        if not session:
+            return None
+
+        if session.visitor_queue.empty():
+            return None
+
+        return session.visitor_queue.get_nowait()
+
+    def get_message_for_resident(self, session_id: str) -> Optional[str]:
+        """
+        Retorna a próxima mensagem pendente ao MORADOR, ou None se não houver.
+        """
+        session = self.get_session(session_id)
+        if not session:
+            return None
+
+        if session.resident_queue.empty():
+            return None
+
+        return session.resident_queue.get_nowait()
+
+
+state_machine.py:
+#!/usr/bin/env python3
+# state_machine.py - Máquina de estado simplificada para gerenciar turnos de conversa
+
+import enum
+import logging
+import uuid
+from datetime import datetime
+from typing import Callable, List, Dict, Optional
+import asyncio  # <-- necessário para as funções assíncronas adicionadas
+
+logger = logging.getLogger(__name__)
+
+
+class State(enum.Enum):
+    """Estados simplificados para a conversa entre usuário e IA."""
+    STANDBY = "STANDBY"  # Estado inicial, aguardando nova chamada
+    USER_TURN = "USER_TURN"  # Turno do usuário (sistema está ouvindo)
+    WAITING = "WAITING"  # Estado intermediário de processamento
+    IA_TURN = "IA_TURN"  # Turno da IA (sistema está respondendo)
+
+
+class StateMachine:
+    """
+    Máquina de estados simplificada para controlar o fluxo de comunicação
+    entre o usuário e a IA em uma chamada.
+    """
+
+    def __init__(self):
+        self.current_state = State.STANDBY
+        self.conversation_id = None
+        self.state_change_callbacks: Dict[State, List[Callable]] = {
+            state: [] for state in State
+        }
+        self.transcricoes = []
+        self.ultima_resposta = None
+        logger.info(f"Máquina de estados inicializada em {self.current_state}")
+
+    def get_state(self) -> State:
+        return self.current_state
+
+    def transition_to(self, new_state: State) -> None:
+        if new_state == self.current_state:
+            logger.debug(f"Ignorando transição redundante para {new_state}")
+            return
+
+        old_state = self.current_state
+        self.current_state = new_state
+        logger.info(f"Transição de estado: {old_state} -> {new_state}")
+
+        if old_state == State.IA_TURN and new_state == State.USER_TURN:
+            logger.info("*** IMPORTANTE: Transição de IA_TURN para USER_TURN - ativando escuta ***")
+            self.registrar_transcricao_sistema("Sistema ativou escuta - aguardando fala do usuário")
+        elif old_state == State.WAITING:
+            logger.info(f"Saindo do estado WAITING para {new_state}")
+            self.registrar_transcricao_sistema(f"Estado alterado: {old_state.value} -> {new_state.value}")
+        if new_state == State.USER_TURN:
+            logger.info("*** Sistema pronto para ouvir o usuário ***")
+
+        for callback in self.state_change_callbacks.get(new_state, []):
+            try:
+                callback()
+            except Exception as e:
+                logger.error(f"Erro no callback de mudança de estado: {e}")
+
+    def on_state_change(self, state: State, callback: Callable) -> None:
+        if state in self.state_change_callbacks:
+            self.state_change_callbacks[state].append(callback)
+
+    def is_user_turn(self) -> bool:
+        return self.current_state == State.USER_TURN
+
+    def is_ai_turn(self) -> bool:
+        return self.current_state == State.IA_TURN
+
+    def is_waiting(self) -> bool:
+        return self.current_state == State.WAITING
+
+    def is_standby(self) -> bool:
+        return self.current_state == State.STANDBY
+
+    def start_new_conversation(self, standby=False) -> str:
+        self.conversation_id = str(uuid.uuid4())
+        self.transcricoes = []
+        self.ultima_resposta = None
+
+        if not standby:
+            self.transition_to(State.USER_TURN)
+        else:
+            self.transition_to(State.STANDBY)
+
+        logger.info(f"Nova conversa iniciada com ID: {self.conversation_id}")
+        return self.conversation_id
+
+    def registrar_transcricao_usuario(self, texto: str) -> None:
+        self.transcricoes.append({
+            "timestamp": datetime.now().isoformat(),
+            "origem": "usuario",
+            "texto": texto
+        })
+        logger.info(f"Transcrição do usuário registrada: {texto}")
+
+    def registrar_transcricao_ia(self, texto: str, resposta_completa: Optional[Dict] = None) -> None:
+        self.transcricoes.append({
+            "timestamp": datetime.now().isoformat(),
+            "origem": "ia",
+            "texto": texto
+        })
+        self.ultima_resposta = resposta_completa
+        logger.info(f"Resposta da IA registrada: {texto}")
+
+    def registrar_transcricao_sistema(self, texto: str) -> None:
+        self.transcricoes.append({
+            "timestamp": datetime.now().isoformat(),
+            "origem": "sistema",
+            "texto": texto
+        })
+        logger.info(f"Mensagem do sistema registrada: {texto}")
+
+    def obter_historico_transcricoes(self) -> List[Dict]:
+        return self.transcricoes
+
+    def get_conversation_id(self) -> Optional[str]:
+        return self.conversation_id
+
+    def end_conversation(self) -> None:
+        logger.info(f"Conversa {self.conversation_id} finalizada")
+        self.conversation_id = None
+        self.transition_to(State.STANDBY)
+
+    # Novas funções adicionadas:
+    async def wait_for_state(self, state: State):
+        """Aguarda até que o estado especificado seja atingido."""
+        while self.current_state != state:
+            await asyncio.sleep(0.1)
+
+    async def wait_for_state_change(self):
+        """Aguarda até que ocorra uma mudança do estado atual."""
+        current_state = self.current_state
+        while self.current_state == current_state:
+            await asyncio.sleep(0.1)
+
+
+README.md:
+# AudioSocket Simple
+
+Aplicação simplificada para atendimento por IA em condomínios utilizando o protocolo AudioSocket do Asterisk.
+
+## Descrição
+
+Esta aplicação é responsável por gerenciar chamadas VoIP através do protocolo AudioSocket, realizando:
+
+1. Detecção de voz usando VAD (Voice Activity Detection)
+2. Transcrição do áudio usando Azure Speech Services
+3. Processamento de intenções via API de IA
+4. Síntese de voz para respostas
+5. Gerenciamento de turnos de conversa entre usuário e IA
+
+## Funcionalidades principais
+
+- Socket TCP para comunicação com o Asterisk via protocolo AudioSocket
+- Máquina de estados simplificada com 4 estados (STANDBY, USER_TURN, WAITING, IA_TURN)
+- Gerenciamento de IDs de conversa para manter o contexto entre mensagens
+- Mensagem de saudação automática configurável
+- Detecção de voz e silêncio usando webrtcvad
+- Transcrição de áudio através do Azure Speech Services
+- Comunicação com API de IA para processar mensagens do usuário
+- Síntese de voz usando Azure Speech Services
+- Interface web simples para debug e monitoramento
+
+## Requisitos
+
+- Python 3.8+
+- Biblioteca webrtcvad para detecção de voz
+- Azure Speech Services para transcrição e síntese de voz
+- API de IA para processamento de mensagens
+
+## Configuração
+
+1. Crie um arquivo `.env` com as seguintes variáveis de ambiente:
+   ```
+   AZURE_SPEECH_KEY=sua_chave_do_azure
+   AZURE_SPEECH_REGION=sua_regiao_do_azure
+   SILENCE_THRESHOLD_SECONDS=2.0
+   AI_API_URL=http://localhost:8000/messages
+   ```
+
+2. Instale as dependências:
+   ```
+   pip install -r requirements.txt
+   ```
+
+3. Personalize a mensagem de saudação no arquivo `config.json`:
+   ```json
+   {
+     "greeting": {
+       "message": "Condomínio Apoena, em que posso ajudar?",
+       "voice": "pt-BR-AntonioNeural",
+       "delay_seconds": 2
+     },
+     ...
+   }
+   ```
+
+## Execução
+
+### Servidor principal
+Inicie o servidor principal que lida com a chamada e inclui a interface web de debug:
+```
+python main.py
+```
+
+O servidor AudioSocket irá escutar em 127.0.0.1:8080 e a interface web de debug estará disponível em http://127.0.0.1:8081.
+
+### Cliente de teste com microfone
+Para testar o sistema com seu microfone local:
+```
+python microfone_client.py
+```
+
+Este cliente captura áudio do microfone do seu computador e o envia para o servidor AudioSocket, permitindo testar toda a funcionalidade sem precisar do Asterisk.
+
+Opções disponíveis:
+```
+python microfone_client.py --host 127.0.0.1 --port 8080
+```
+
+## Fluxo de conversação
+
+1. **Estado STANDBY**: 
+   - Sistema aguarda uma conexão
+   - Ao receber uma conexão, registra o ID da chamada
+   - Após um breve delay, envia a mensagem de saudação
+   
+2. **Estado USER_TURN**:
+   - Sistema ativa após a saudação
+   - Detecta quando o usuário começa a falar
+   - Captura o áudio até identificar silêncio
+   - Transcreve o áudio usando Azure Speech
+   
+3. **Estado WAITING**:
+   - Processa o texto transcrito
+   - Envia para a API de IA
+   
+4. **Estado IA_TURN**:
+   - Recebe a resposta da IA
+   - Sintetiza a fala usando Azure Speech
+   - Envia o áudio de resposta
+   - Retorna para USER_TURN ou STANDBY dependendo da resposta da IA
+
+## Interface de Debug
+
+A interface web de debug mostra:
+- Estado atual da chamada
+- ID da conversa ativa
+- Histórico de transcrições (usuário, IA e sistema)
+
+A página atualiza automaticamente a cada 2 segundos para mostrar o estado atual.
+
+## API de IA
+
+A aplicação se comunica com uma API de IA pela URL `http://localhost:8000/messages` que deve retornar uma resposta no formato:
+
+```json
+{
+    "content": {
+        "mensagem": "Texto da resposta da IA",
+        "dados": {
+            "intent_type": "tipo_intencao",
+            "outros_dados": "valores_relevantes"
+        },
+        "valid_for_action": false
+    },
+    "timestamp": "2025-04-15T19:17:59.052067",
+    "set_call_status": "USER_TURN"
+}
+```
+
+O campo `set_call_status` pode ter os valores: "USER_TURN", "WAITING", "IA_TURN" ou "STANDBY" para controlar o fluxo da conversa.
+
+audio_utils.py:
+#!/usr/bin/env python3
+# audio_utils.py - Utilitários para manipulação de áudio
+
+from pydub import AudioSegment
+from io import BytesIO
+import logging
+
+logger = logging.getLogger(__name__)
+
+def converter_bytes_para_wav(dados_slin, sample_rate=8000):
+    """
+    Converte bytes no formato SLIN para WAV.
+    
+    Args:
+        dados_slin: Bytes de áudio no formato SLIN
+        sample_rate: Taxa de amostragem (padrão: 8000 Hz)
+        
+    Returns:
+        Bytes WAV do áudio convertido
+    """
+    try:
+        audio_segment = AudioSegment(
+            data=bytes(dados_slin),
+            sample_width=2,  # 16 bits = 2 bytes
+            frame_rate=sample_rate,
+            channels=1
+        )
+        buffer = BytesIO()
+        audio_segment.export(buffer, format='wav')
+        return buffer.getvalue()
+    except Exception as e:
+        logger.error(f"Erro ao converter bytes para WAV: {e}")
+        return None
+
+def converter_wav_para_slin(dados_wav, sample_rate=8000):
+    """
+    Converte bytes WAV para o formato SLIN.
+    
+    Args:
+        dados_wav: Bytes de áudio no formato WAV
+        sample_rate: Taxa de amostragem desejada (padrão: 8000 Hz)
+        
+    Returns:
+        Bytes SLIN do áudio convertido
+    """
+    try:
+        audio_segment = AudioSegment.from_file(BytesIO(dados_wav), format="wav")
+        audio_segment = audio_segment.set_frame_rate(sample_rate).set_channels(1).set_sample_width(2)
+        return audio_segment.raw_data
+    except Exception as e:
+        logger.error(f"Erro ao converter WAV para SLIN: {e}")
+        return None
+
+microfone_client.py:
+#!/usr/bin/env python3
+import socket, struct, threading, pyaudio, logging, uuid
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
+
+KIND_ID, KIND_SLIN, KIND_HANGUP = 0x01, 0x10, 0x00
+
+class AudioSocketClient:
+    def __init__(self, host='127.0.0.1', port=8081):
+        self.host, self.port = host, port
+        self.call_id = uuid.uuid4().bytes
+        self.sample_rate, self.channels, self.chunk_size = 8000, 1, 320
+        self.format = pyaudio.paInt16
+        self.running = False
+
+    def connect(self):
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.socket.connect((self.host, self.port))
+        self.socket.sendall(struct.pack('>B H', KIND_ID, len(self.call_id)) + self.call_id)
+        logging.info("Conectado ao servidor.")
+        self.running = True
+        threading.Thread(target=self.send_audio).start()
+        threading.Thread(target=self.receive_audio).start()
+
+    def send_audio(self):
+        p = pyaudio.PyAudio()
+        stream = p.open(format=self.format, channels=self.channels, rate=self.sample_rate, input=True, frames_per_buffer=self.chunk_size//2)
+        try:
+            while self.running:
+                data = stream.read(self.chunk_size//2, exception_on_overflow=False)
+                self.socket.sendall(struct.pack('>B H', KIND_SLIN, len(data)) + data)
+        except Exception as e:
+            logging.error(f"Erro no envio de áudio: {e}")
+            self.running = False
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
+
+    def receive_audio(self):
+        p = pyaudio.PyAudio()
+        stream = p.open(format=self.format, channels=self.channels, rate=self.sample_rate, output=True)
+        try:
+            while self.running:
+                header = self.socket.recv(3)
+                if not header: break
+                kind, length = header[0], struct.unpack('>H', header[1:3])[0]
+                payload = self.socket.recv(length)
+                if kind == KIND_SLIN:
+                    stream.write(payload)
+        except Exception as e:
+            logging.error(f"Erro no recebimento de áudio: {e}")
+            self.running = False
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
+
+    def disconnect(self):
+        self.running = False
+        self.socket.sendall(struct.pack('>B H', KIND_HANGUP, 0))
+        self.socket.close()
+        logging.info("Desconectado do servidor.")
+
+if __name__ == "__main__":
+    client = AudioSocketClient()
+    try:
+        client.connect()
+        while client.running: pass
+    except KeyboardInterrupt:
+        client.disconnect()
+
+
+code_gpt.py:
+import os
+
+IGNORE = {'__pycache__', '.env', '.git', '.idea', 'audio'}
+
+def list_structure(base_path, prefix=""):
+    tree = ""
+    items = sorted(os.listdir(base_path))
+    for item in items:
+        if item in IGNORE:
+            continue
+        path = os.path.join(base_path, item)
+        if os.path.isdir(path):
+            tree += f"{prefix}{item}/\n"
+            tree += list_structure(path, prefix + "    ")
+        else:
+            tree += f"{prefix}{item}\n"
+    return tree
+
+def list_code_files(base_path):
+    code = ""
+    for root, dirs, files in os.walk(base_path):
+        dirs[:] = [d for d in dirs if d not in IGNORE]
+        for file in files:
+            if file in IGNORE:
+                continue
+            file_path = os.path.join(root, file)
+            rel_path = os.path.relpath(file_path, base_path)
+            code += f"\n{rel_path}:\n"
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    code += f.read() + "\n"
+            except Exception as e:
+                code += f"Erro ao ler arquivo: {e}\n"
+    return code
+
+def main():
+    base_path = "."
+    structure = list_structure(base_path)
+    code_files = list_code_files(base_path)
+
+    with open("code.txt", "w", encoding="utf-8") as f:
+        f.write("Estrutura do projeto:\n")
+        f.write(structure)
+        f.write("\nCódigo fonte:\n")
+        f.write(code_files)
+
+    print("Arquivo 'code.txt' criado com sucesso.")
+
+if __name__ == "__main__":
+    main()
+
+
+main.py:
+import asyncio
+import logging
+from dotenv import load_dotenv
+from audiosocket_handler import iniciar_servidor_audiosocket_visitante, iniciar_servidor_audiosocket_morador
+logging.basicConfig(level=logging.INFO)
+
+load_dotenv()
+
+async def main():
+    server_visitante = await asyncio.start_server(iniciar_servidor_audiosocket_visitante, '0.0.0.0', 8080)
+    server_morador = await asyncio.start_server(iniciar_servidor_audiosocket_morador, '0.0.0.0', 8081)
+
+    logging.info("Servidor visitante: 0.0.0.0:8080")
+    logging.info("Servidor morador:   0.0.0.0:8081")
+
+    async with server_visitante, server_morador:
+        await asyncio.gather(
+            server_visitante.serve_forever(),
+            server_morador.serve_forever()
+        )
+
+if __name__ == "__main__":
+    asyncio.run(main())
+
+
+speech_service.py:
+import asyncio
+from io import BytesIO
+
+from audio_utils import converter_bytes_para_wav, converter_wav_para_slin
+import azure.cognitiveservices.speech as speechsdk
+import os
+from pydub import AudioSegment
+
+async def transcrever_audio_async(dados_audio_slin):
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, transcrever_audio, dados_audio_slin)
+
+async def sintetizar_fala_async(texto):
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, sintetizar_fala, texto)
+
+def transcrever_audio(dados_audio_slin):
+    audio_wav = converter_bytes_para_wav(dados_audio_slin, 8000)
+    if not audio_wav:
+        return None
+    audio_segment = AudioSegment.from_file(BytesIO(audio_wav), format="wav")
+    audio_segment = audio_segment.set_frame_rate(16000)
+    buffer = BytesIO()
+    audio_segment.export(buffer, format='wav')
+    audio_wav_16k = buffer.getvalue()
+    speech_config = speechsdk.SpeechConfig(subscription=os.getenv('AZURE_SPEECH_KEY'), region=os.getenv('AZURE_SPEECH_REGION'))
+    speech_config.speech_recognition_language = 'pt-BR'
+    audio_stream = speechsdk.audio.PushAudioInputStream()
+    audio_stream.write(audio_wav_16k)
+    audio_stream.close()
+    audio_config = speechsdk.audio.AudioConfig(stream=audio_stream)
+    recognizer = speechsdk.SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
+    result = recognizer.recognize_once()
+    return result.text if result.reason == speechsdk.ResultReason.RecognizedSpeech else None
+
+def sintetizar_fala(texto):
+    speech_config = speechsdk.SpeechConfig(subscription=os.getenv('AZURE_SPEECH_KEY'), region=os.getenv('AZURE_SPEECH_REGION'))
+    speech_config.speech_synthesis_language = 'pt-BR'
+    synthesizer = speechsdk.SpeechSynthesizer(speech_config=speech_config, audio_config=None)
+    result = synthesizer.speak_text_async(texto).get()
+    if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
+        return converter_wav_para_slin(result.audio_data, 8000)
+    return None
+
+
+ai/state_manager.py:
+import redis
+import json
+
+r = redis.Redis(host='localhost', port=6379, decode_responses=True)
+
+def get_user_state(id: str):
+    data = r.get(id)
+    return json.loads(data) if data else {"intent": {}, "history": []}
+
+def update_user_state(user_id: str, intent=None, message=None):
+    state = get_user_state(user_id)
+    if intent:
+        state["intent"].update(intent)
+    if message:
+        state["history"].append(message)
+    r.set(user_id, json.dumps(state))
+
+def clear_user_state(user_id: str):
+    r.delete(user_id)
+
+
+ai/tasks.py:
+from crewai import Task
+from ai.agents import (create_conversation_coordinator_agent, create_conversation_monitor_agent,
+                       identificator_person_agent, identificator_intent_agent, identificator_resident_apartment_agent)
+
+
+def create_conversation_coordinator_task(user_message: str, conversation_history: str, intent: dict) -> Task:
+    agent = create_conversation_coordinator_agent()
+    monitor = create_conversation_monitor_agent()
+    print(conversation_history)
+    return Task(
+        description=f"""
+        Você é um concierge virtual em uma conversa com alguém no portão do condomínio.
+
+        Histórico da conversa:
+        {conversation_history}
+
+        Mensagem nova:
+        "{user_message}"
+
+        Intenção acumulada até agora:
+        {intent}
+
+        Seu trabalho:
+        - Verificar se todos os campos estão preenchidos:
+          • intent_type
+          • interlocutor_name
+          • apartment_number
+          • resident_name
+        - Se faltar algo, pergunte o que falta.
+        - Se estiver completo, apenas confirme.
+
+        Regras:
+        - NÃO repita o que já foi dito.
+        - NÃO reinicie a conversa.
+        - Não peça dados que já estão no intent.
+        """,
+        # expected_output="""
+        # Mensagem para o usuário ou confirmação final.
+        # Confirme a ação de forma educada, objetiva e breve.
+        # Exemplos de formato desejado:
+        # - "Entrega confirmada para Fulano no xxxx. Notificarei o morador."
+        # - "Entendido, vou avisar Cicrano no apartamento bla bla bla."
+        # Evite repetições desnecessárias, não deseje bom dia ou acrescente floreios.
+        # """,
+        expected_output=""""
+        Responda em formato JSON com os seguintes campos:
+        - mensagem: mensagem de resposta clara e objetiva para o usuário, podendo ser a confirmação final. 
+        Confirme a ação de forma educada, objetiva e breve. Ex, "Entrega confirmada para Fulano no xxxx. Notificarei o 
+        morador"., ou ainda, "Entendido, vou avisar Cicrano no apartamento bla bla bla."
+        - dados: objeto com os campos intent_type, interlocutor_name, apartment_number e resident_name.
+        
+        Exemplo:
+        {
+          "mensagem": "Entrega confirmada para Fulano do XXXX.",
+          "dados": {
+            "intent_type": "entrega",
+            "interlocutor_name": "João",
+            "apartment_number": "XXXX",
+            "resident_name": "Fulano"
+          }
+        }
+        O campo message é sempre obrigatório, pois você sempre deve ter uma resposta, mesmo que seja uma pergunta para 
+        quem está sendo atendido. Se não puder identificar os campos de dados, retorne as chaves com valores vazios. 
+        Não use floreios, não repita informações já ditas, apenas informe ou confirme a ação.
+        O campo intent_type dentro de dados deve ser preenchido com entrega, visita ou desconhecido, conforme o que 
+        você identificar.
+        
+        Alguns exemplos de campos faltando e possíveis respostas:
+        {
+          "mensagem": "Informe o que deseja",
+          "dados": {
+            "intent_type": "",
+            "interlocutor_name": "",
+            "apartment_number": "",
+            "resident_name": ""
+          }
+        }
+        
+        {
+          "mensagem": "Por favor, me informe o nome do visitante, o apartamento e o nome do morador que autorizou",
+          "dados": {
+            "intent_type": "visita",
+            "interlocutor_name": "",
+            "apartment_number": "",
+            "resident_name": ""
+          }
+        } 
+        
+        {
+          "mensagem": "Por favor, me informe o seu nome, o apartamento e o nome do morador que vai receber a entrega",
+          "dados": {
+            "intent_type": "entrega",
+            "interlocutor_name": "",
+            "apartment_number": "",
+            "resident_name": ""
+          }
+        }                 
+                
+        {
+          "mensagem": "Por favor, me informe o nome do morador.",
+          "dados": {
+            "intent_type": "entrega",
+            "interlocutor_name": "Carlos",
+            "apartment_number": "301",
+            "resident_name": ""
+          }
+        }
+        
+        {
+          "mensagem": "Por favor, me informe sua intenção",
+          "dados": {
+            "intent_type": "",
+            "interlocutor_name": "Carlos",
+            "apartment_number": "301",
+            "resident_name": "Fulano"
+          }
+        }
+        
+        {
+          "mensagem": "Podes informar o seu nome?",
+          "dados": {
+            "intent_type": "visita",
+            "interlocutor_name": "",
+            "apartment_number": "301",
+            "resident_name": "Fulano"
+          }
+        }      
+        
+        {
+          "mensagem": "Podes informar o número do apartamento?",
+          "dados": {
+            "intent_type": "visita",
+            "interlocutor_name": "Cicrano",
+            "apartment_number": "",
+            "resident_name": "Fulano"
+          }
+        }              
+        
+        
+        """,
+        agent=agent
+    )
+
+
+def conversation_extractor_name_task(user_message: str, conversation_history: str, intent: dict) -> Task:
+    agent = identificator_person_agent()
+    print(conversation_history)
+    return Task(
+        description=f"""
+        Você é o concierge inicial virtual do condomínio em uma conversa com alguém no portão do condomínio.
+
+        Histórico da conversa:
+        {conversation_history}
+
+        Mensagem nova:
+        "{user_message}"
+
+        Intenção acumulada até agora:
+        {intent}
+
+        Seu trabalho:
+        - Verificar se o campo interlocutor_name está preenchido:
+          • interlocutor_name
+        - Se não souber o nome da pessoa, pergunte
+        - Se estiver completo, com um nome legível e aceitável, apenas confirme.
+
+        Regras:
+        - NÃO repita o que já foi dito.
+        - NÃO reinicie a conversa.
+        - Não peça dados que já estão no identificados.
+        """,
+        expected_output=""""
+        Responda em formato JSON onde o campo interlocutor_name deve estar preenchido com o nome do visitante. 
+        O campo de intent_type também deve estar preenchido pois já perguntamos isso ao interlocutor. Os outros
+        campos (apartment_number e resident_name) dentro de dados serão preenchidos pelos outros concierges. 
+        Exemplo de mensagem quando ainda não foi identificado o nome:
+        {
+          "mensagem": "Por favor, me informe o seu nome",
+          "dados": {
+            "intent_type": "",
+            "interlocutor_name": "",
+            "apartment_number": "",
+            "resident_name": ""
+          }
+        }
+        
+        Exemplo de mensagem quando foi identificado o nome:
+        {
+          "mensagem": "Obrigado Fulano, aguarde um instante",
+          "dados": {
+            "intent_type": "",
+            "interlocutor_name": "Fulano",
+            "apartment_number": "",
+            "resident_name": ""
+          }
+        }
+        """,
+        agent=agent
+    )
+
+
+def conversation_extractor_intent_task(user_message: str, conversation_history: str, intent: dict) -> Task:
+    agent = identificator_intent_agent()
+    print(conversation_history)
+    return Task(
+        description=f"""
+        Você é o concierge virtual primário do condomínio em uma conversa com alguém no portão do condomínio.
+
+        Histórico da conversa:
+        {conversation_history}
+
+        Mensagem nova:
+        "{user_message}"
+
+        Intenção acumulada até agora:
+        {intent}
+
+        Seu trabalho:
+        - Verificar se o campo intent_type está preenchido:
+          • intent_type
+        - Se não souber a intenção da pessoa, pergunte.
+        - Se estiver completo, com a intenção identificada entre entrega e visita, apenas confirme.
+
+        Regras:
+        - NÃO repita o que já foi dito.
+        - NÃO reinicie a conversa.
+        - Não peça dados que já estão no identificados.
+        """,
+        expected_output=""""
+        Responda em formato JSON onde o campo intent_type deve estar preenchido com a intenção do visitante. Os outros
+        campos dentro de dados serão preenchidos pelos outros concierges.
+        Mesmo que o usuário diga outras informações, ignore informações como o apartamento e o nome do morador, 
+        apenas retorne a intenção (intent_type).
+
+        Exemplo de mensagem quando ainda não foi identificadoa a intenção:
+        {
+          "mensagem": "Por favor, me informe sua intenção, se visita ou entrega",
+          "dados": {
+            "intent_type": "",
+            "interlocutor_name": "Fulano",
+            "apartment_number": "",
+            "resident_name": ""
+          }
+        }
+
+        Exemplo de mensagem quando foi identificada a intenção:
+        {
+          "mensagem": "Obrigado Fulano, aguarde um instante",
+          "dados": {
+            "intent_type": "visita",
+            "interlocutor_name": "Fulano",
+            "apartment_number": "",
+            "resident_name": ""
+          }
+        }
+        """,
+        agent=agent
+    )
+
+
+def conversation_extractor_resident_apartment_task(user_message: str, conversation_history: str, intent: dict) -> Task:
+    agent = identificator_resident_apartment_agent()
+    print(conversation_history)
+    return Task(
+        description=f"""
+        Você é o concierge virtual terciário em uma conversa com alguém no portão do condomínio.
+
+        Histórico da conversa:
+        {conversation_history}
+
+        Mensagem nova:
+        "{user_message}"
+
+        Intenção acumulada até agora:
+        {intent}
+
+        Seu trabalho:
+        - Verificar se os campos apartment_number e resident_name estão preenchidos:
+          • apartment_number
+          • resident_name
+        - Se não souber o apartamento ou o morador, pergunte
+        - Se estiver completo, com o apartamento e o nome do morador, apenas confirme.
+
+        Regras:
+        - NÃO repita o que já foi dito.
+        - NÃO reinicie a conversa.
+        - Não peça dados que já estão no identificados.
+        """,
+        expected_output=""""
+        Responda em formato JSON onde os campos apartment_number e resident_name devem estar preenchidos com o
+        número do apartamento e nome do morador. Os outros campos serão preenchidos pelos outros concierges.
+
+        Exemplo de mensagem quando ainda não foi identificado o apartamento ou o morador:
+        {
+          "mensagem": "Por favor, me informe sua para qual apartamento e o nome do morador",
+          "dados": {
+            "intent_type": "visita",
+            "interlocutor_name": "Fulano",
+            "apartment_number": "",
+            "resident_name": ""
+          }
+        }
+
+        Exemplo de mensagem quando foi identificado o apartamento e o morador:
+        {
+          "mensagem": "Obrigado Fulano, aguarde um instante",
+          "dados": {
+            "intent_type": "visita",
+            "interlocutor_name": "Fulano",
+            "apartment_number": "501",
+            "resident_name": "Cicrano"
+          }
+        }
+        """,
+        agent=agent
+    )
+
+
+ai/tools.py:
+from rapidfuzz import fuzz
+import json
+from pathlib import Path
+from typing import Dict
+from ai.models.intent import IntentData
+from crewai.tools import tool
+
+VALID_APT_PATH = Path("data/apartamentos.json")
+
+@tool("SendMessageTool")
+def identify_user_intent(message: str) -> str:
+    """
+    Extrai intenção do usuário com base na mensagem utilizando um modelo LLM.
+    Retorna um JSON no formato esperado por UserIntent.
+    """
+    return message
+
+
+# @tool("ValidarIntentComFuzzyTool")
+def validar_intent_com_fuzzy(intent: Dict) -> Dict:
+    """
+    Verifica se a combinação apartment_number e resident_name da intent
+    corresponde (mesmo que parcialmente) a um morador real.
+
+    Retorna um dicionário:
+    {
+      "status": "válido" ou "inválido",
+      "match_name": "Fulano de Tal",
+      "voip_number": "1003031"
+    }
+    """
+    try:
+        apt = intent.get("apartment_number", "").strip().lower()  # 'apartment_number
+        resident_informado = intent.get("resident_name", "").strip().lower()
+
+        if not apt or not resident_informado:
+            return {
+                "status": "inválido",
+                "reason": "Faltando número do apartamento ou nome do morador"
+            }
+
+        with open(VALID_APT_PATH, "r", encoding="utf-8") as f:
+            apartamentos = json.load(f)
+
+        for apartamento in apartamentos:
+            if apartamento["apartment_number"] != apt:
+                continue
+
+            for residente in apartamento["residents"]:
+                nome_residente = residente.strip().lower()
+                score = fuzz.partial_ratio(resident_informado, nome_residente)
+
+                if score >= 85:
+                    return {
+                        "status": "válido",
+                        "match_name": residente,
+                        "voip_number": apartamento["voip_number"]
+                    }
+
+        return {
+            "status": "inválido",
+            "reason": "Morador não encontrado neste apartamento"
+        }
+    except Exception as e:
+        return {
+            "status": "erro",
+            "message": str(e)
+        }
+
+
+ai/__init__.py:
+
+
+ai/agents.py:
+import os
+from crewai import Agent
+
+def identificator_person_agent() -> Agent:
+    """
+    Cria e retorna um agente responsável por conversar com o usuário,
+    para identificar quem está falando.
+    """
+    return Agent(
+        role="Primeiro Concierge Virtual do Condomínio",
+        goal="Atender o usuário com empatia e eficiência, visando identificar quem esta falando",
+        backstory="""
+        Você é o primeiro concierge virtual treinado para conversar com pessoas no interfone da portaria de um condomínio.
+
+        Seu trabalho é:
+        - Solicitar a identificação da pessoa que está falando
+        - Coletar :
+          - Quem está no portão (interlocutor_name) (obrigatório)
+          - Solicitar que a pessoa identifique-se para que o atendimento continue
+          - Analise se o nome informado realmente é um nome aceitável, o usuário pode informar coisas como:
+            - "Olá, tudo bem?" ou ainda
+            - "Boa tarde", isso não é um nome válido
+          - Você precisa interagir até que o nome seja obtido
+        - Sua função não é identificar outras informações, apenas obter o nome e a identificação de quem está falando.
+        """,
+        verbose=False,
+        allow_delegation=False,
+    )
+
+def identificator_intent_agent() -> Agent:
+    """
+    Cria e retorna um agente responsável por conversar com o usuário,
+    para identificar qual a intenção do usuário.
+    """
+    return Agent(
+        role="Segundo Concierge Virtual do Condomínio",
+        goal="Atender o usuário com empatia e eficiência, visando identificar qual a intenção do usuário",
+        backstory="""
+        Você é o segundo concierge virtual treinado para conversar com pessoas no interfone da portaria de um condomínio.
+
+        Seu trabalho é:
+        - Solicitar a qual a intenção da pessoa que está falando
+        - Coletar :
+          - Qual a intenção da pessoa (intent_type)
+          - Por hora, aceitamos apenas duas intenções, entrega ou visita. Precisamos identificar se a intenção 
+          é uma dessas duas.
+        - Sua função não é identificar outras informações, apenas obter a intenção de quem está falando.
+        """,
+        verbose=False,
+        allow_delegation=False,
+    )
+
+def identificator_resident_apartment_agent() -> Agent:
+    """
+    Cria e retorna um agente responsável por conversar com o usuário,
+    para identificar quam o nome do morador e apartamento.
+    """
+    return Agent(
+        role="Terceiro Concierge Virtual do Condomínio",
+        goal="Atender o usuário com empatia e eficiência, visando identificar qual a apartamento do morador e o nome "
+             "do morador",
+        backstory="""
+        Você é o terceiro concierge virtual treinado para conversar com pessoas no interfone da portaria de um condomínio.
+
+        Seu trabalho é:
+        - Solicitar a qual a nome do morador e qual o apartamento
+        - Coletar :
+          - Qual o nome do morador (resident_name)
+          - Qual o apartamento (apartment_number)
+        - Sua função não é identificar outras informações, apenas obter o nome do morador e o apartamento.
+        """,
+        verbose=False,
+        allow_delegation=False,
+    )
+
+def create_conversation_coordinator_agent() -> Agent:
+    """
+    Cria e retorna um agente responsável por conversar com o usuário,
+    entender sua intenção e coletar todas as informações necessárias.
+    """
+    return Agent(
+        role="Concierge Virtual do Condomínio",
+        goal="Atender o usuário com empatia e eficiência, entendendo e completando sua solicitação",
+        backstory="""
+        Você é um concierge virtual treinado que conversa com pessoas no interfone da portaria de um condomínio.
+
+        Seu trabalho é:
+        - Entender se a pessoa deseja fazer uma entrega ou visita (obrigatório)
+        - Coletar todas as informações necessárias:
+          • Quem está no portão (interlocutor_name) (obrigatório)
+          • Número do apartamento de destino (apartment_number) (obrigatório)
+          • Nome do morador (resident_name) (obrigatório)
+        - Confirmar quando tudo estiver preenchido
+        - Jamais perguntar algo que o usuário já informou
+        - Nunca delegar sua responsabilidade de entender a solicitação
+        - Nunca confunda entrega com visita, se o morador diz que vai ou deseja ir em um apartamento, provável visita
+
+        Quando tiver todas as informações, apenas finalize a conversa com uma resposta simpática e diga que irá notificar o morador.
+        """,
+        verbose=False,
+        allow_delegation=False,
+    )
+
+
+def create_conversation_monitor_agent() -> Agent:
+    """
+    Cria e retorna um agente responsável por conversar com o usuário,
+    entender sua intenção e coletar todas as informações necessárias.
+    """
+    return Agent(
+        role="Gerente do Concierge Virtual do Condomínio",
+        goal="Supervisionar o concierge virtual e garantir que ele vai extrair todos os dados que precisamos do usuário",
+        backstory="""
+        Você é um gerente senior e sua função é garantir que os etendentes da portaria remota (concierge virtual) 
+        extraiam as informações corretas do usuário. Há relatos de que os atendentes estão chamando o morador, sem saber 
+        qual a intenção ou sequer perguntar o nome de quem está falando ou se deseja uma visita ou entrega. 
+
+        Seu trabalho é:
+        - Identificar primeiro a pessoa que está falando com o concierge virtual e qual sua intenção
+        - Somente pergunte o nome do morador e o apartamento se já houver identificado a interação e o nome do vistnate ou entregador
+        - Fiscalizar o trabalho do concierge virtual
+        - Garantir que ele vau coletar todas as informações necessárias:
+          • Identificar a intenção do usuário (intent_type) obrigatório: se é visita ou entrega
+          • Quem está no portão (interlocutor_name) (obrigatório)
+          • Número do apartamento de destino (apartment_number) (obrigatório)
+          • Nome do morador (resident_name) (obrigatório)
+        - Nunca finalize a conversa se qualquer campo estiver vazio.
+        - Se o nome do morador estiver vazio, você deve perguntar isso.
+
+        Fiscalize as respostas antes de serem enviadas ao usuário garantindo tudo que foi solicitado.
+        """,
+        verbose=False,
+        allow_delegation=False,
+    )
+
+
+ai/crew.py:
+from crewai import Crew
+
+from ai.state_manager import get_user_state, update_user_state, clear_user_state
+from ai.tasks import create_conversation_coordinator_task, conversation_extractor_name_task, \
+    conversation_extractor_intent_task, conversation_extractor_resident_apartment_task
+from ai.tools import validar_intent_com_fuzzy
+from ai.utils.intent_extractor import extract_intent_from_response
+from ai.models.intent import IntentData
+import json
+
+def process_user_message_with_coordinator(id: str, message: str) -> dict:
+    state = get_user_state(id)
+    history = "\n".join(state["history"])
+    partial_intent = state["intent"]
+    dados_estruturados = None
+
+    # A partir do nome obtido, verifica a intenção do usuário
+    if not state["intent"] or state["intent"]["intent_type"] == "":
+        task = conversation_extractor_intent_task(
+            user_message=message,
+            conversation_history=history,
+            intent=partial_intent
+        )
+        crew = Crew(tasks=[task], verbose=True)
+        result = str(crew.kickoff())
+        try:
+            dados_estruturados = extract_intent_from_response(result)
+            update_user_state(id, intent=dados_estruturados.get("dados"),
+                              message=f"Usuário: {message}\nResposta LLM: {dados_estruturados.get('mensagem')}")
+        except Exception:
+            update_user_state(id, message=f"Usuário: {dados_estruturados.get('mensagem')}")
+
+        if dados_estruturados["dados"]["intent_type"] == "" or dados_estruturados["dados"]["intent_type"] == "desconhecido":
+            return dados_estruturados
+
+
+    state = get_user_state(id)
+    history = "\n".join(state["history"])
+    partial_intent = state["intent"]
+
+    # Verifica se o nome foi obtido, caso contrário interage com o usuário para extrair essa informação
+    if state["intent"] and state["intent"]["interlocutor_name"] == "":
+        task = conversation_extractor_name_task(
+            user_message=message,
+            conversation_history=history,
+            intent=partial_intent
+        )
+        crew = Crew(tasks=[task], verbose=True)
+        result = str(crew.kickoff())
+        try:
+            dados_estruturados = extract_intent_from_response(result)
+            update_user_state(id, intent=dados_estruturados.get("dados"),
+                              message=f"Usuário: {message}\nResposta LLM: {dados_estruturados.get('mensagem')}")
+        except Exception:
+            update_user_state(id, message=f"Usuário: {dados_estruturados.get('mensagem')}")
+
+        if dados_estruturados["dados"]["interlocutor_name"] == "":
+            return dados_estruturados
+
+    state = get_user_state(id)
+    history = "\n".join(state["history"])
+    partial_intent = state["intent"]
+
+    if state["intent"] and state["intent"]["apartment_number"] == "" or state["intent"]["resident_name"] == "":
+        task = conversation_extractor_resident_apartment_task(
+            user_message=message,
+            conversation_history=history,
+            intent=partial_intent
+        )
+        crew = Crew(tasks=[task], verbose=True)
+        result = str(crew.kickoff())
+        try:
+            dados_estruturados = extract_intent_from_response(result)
+            update_user_state(id, intent=dados_estruturados.get("dados"),
+                              message=f"Usuário: {message}\nResposta LLM: {dados_estruturados.get('mensagem')}")
+        except Exception:
+            update_user_state(id, message=f"Usuário: {dados_estruturados.get('mensagem')}")
+
+        if dados_estruturados["dados"]["apartment_number"] == "" or dados_estruturados["dados"]["resident_name"] == "":
+            return dados_estruturados
+
+        # É preciso retornar os dados para poder deixar a chamada em waiting enquanto processamos a intenção do usuário
+
+        state = get_user_state(id)
+        partial_intent = state["intent"]
+        resultado = validar_intent_com_fuzzy(partial_intent)
+        print(resultado)
+
+        # gostaria de poder retornar um audio e também poder mudar o statuse o turno da chamada atual diretamente por aqui
 
         return dados_estruturados
 
