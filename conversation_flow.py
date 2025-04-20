@@ -1,4 +1,5 @@
 # conversation_flow.py
+
 import logging
 from enum import Enum, auto
 from typing import Optional
@@ -8,6 +9,7 @@ from ai.tools import validar_intent_com_fuzzy
 
 import pika
 import json
+import asyncio  ### PASSO 2: precisamos de asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +30,9 @@ class ConversationFlow:
         self.intent_data = {}
         self.is_fuzzy_valid = False
         self.voip_number_morador: Optional[str] = None
+
+        # Para controlar tentativas de chamada
+        self.tentativas_chamada = 0  ### PASSO 2
 
     # ---------------
     # VISITOR
@@ -54,39 +59,40 @@ class ConversationFlow:
                 logger.info(f"[Flow] fuzzy= {fuzzy_res}")
 
                 if fuzzy_res["status"] == "válido":
-                    # Passa para VALIDADO
                     self.is_fuzzy_valid = True
                     self.voip_number_morador = fuzzy_res.get("voip_number")
-
                     self.state = FlowState.VALIDADO
+
+                    # Mensagem curta ao visitante:
                     session_manager.enfileirar_visitor(
                         session_id,
-                        "Obrigado, temos todos os dados. Vou chamar o morador agora..."
+                        "Ok, vamos entrar em contato com o morador. Aguarde, por favor."
                     )
 
-                    # Imediatamente chama o morador
+                    # Avança para CHAMANDO_MORADOR
                     self.state = FlowState.CHAMANDO_MORADOR
                     self.chamar_morador(session_id, session_manager)
                 else:
-                    # Se "inválido", já enfileiramos a mensagem
                     session_manager.enfileirar_visitor(
                         session_id,
                         f"Desculpe, dados inválidos: {fuzzy_res.get('reason','motivo')}. Vamos tentar novamente."
                     )
 
         elif self.state == FlowState.CHAMANDO_MORADOR:
-            # Se o visitante continuar falando enquanto chamamos o morador
-            session_manager.enfileirar_visitor(session_id, "Já estou chamando o morador, aguarde...")
+            session_manager.enfileirar_visitor(
+                session_id,
+                "Ainda estou tentando chamar o morador, aguarde..."
+            )
 
         elif self.state == FlowState.ESPERANDO_MORADOR:
-            # Visitante fala algo enquanto esperamos morador
-            session_manager.enfileirar_visitor(session_id, "O morador está na linha. Aguarde a resposta.")
+            session_manager.enfileirar_visitor(
+                session_id,
+                "O morador está na linha. Aguarde a resposta."
+            )
 
         elif self.state == FlowState.FINALIZADO:
-            # Se o visitante falar após finalizado, encerramos
             session_manager.enfileirar_visitor(session_id, "A chamada já foi encerrada. Obrigado.")
         else:
-            # Estado default (caso surja algo)
             session_manager.enfileirar_visitor(session_id, "Aguarde, por favor.")
 
     # ---------------
@@ -102,11 +108,10 @@ class ConversationFlow:
             session_manager.enfileirar_visitor(session_id, "O morador atendeu. Aguarde a resposta.")
 
         elif self.state == FlowState.ESPERANDO_MORADOR:
-            # Aqui é onde esperamos "sim" ou "não"
+            # Esperamos SIM ou NÃO
             lower_text = text.lower()
             if "sim" in lower_text:
                 session_manager.enfileirar_visitor(session_id, "Morador autorizou sua entrada!")
-                # Encerrar
                 self.state = FlowState.FINALIZADO
                 self._finalizar(session_id, session_manager)
             elif "não" in lower_text or "nao" in lower_text:
@@ -117,14 +122,14 @@ class ConversationFlow:
                 session_manager.enfileirar_resident(session_id, "Não entendi. Responda SIM ou NÃO.")
 
         elif self.state == FlowState.FINALIZADO:
-            # Se o morador falar após final, repete que está encerrado
             session_manager.enfileirar_resident(session_id, "O fluxo já foi finalizado. Obrigado.")
+
         elif self.state == FlowState.COLETANDO_DADOS:
-            # Morador falou antes de chamarmos
             session_manager.enfileirar_resident(
                 session_id,
                 "Ainda estamos coletando dados do visitante. Aguarde um instante..."
             )
+
         else:
             # Estado VALIDADO ou outro
             session_manager.enfileirar_resident(session_id, "Ainda estou preparando a chamada, aguarde.")
@@ -135,20 +140,23 @@ class ConversationFlow:
     def chamar_morador(self, session_id: str, session_manager):
         """
         Envia a mensagem AMQP para gerar a ligação com o morador.
+        E agenda a verificação da conexão em 10s.
         """
         if not self.voip_number_morador:
             logger.warning("[Flow] voip_number_morador está vazio, não posso discar.")
             return
 
-        # Mensagem para o visitante
+        # Primeira tentativa ou re-tentativa
+        self.tentativas_chamada += 1
+
         session_manager.enfileirar_visitor(
             session_id,
-            f"Discando para {self.voip_number_morador}..."
+            f"Discando para {self.voip_number_morador}... (Tentativa {self.tentativas_chamada})"
         )
 
         try:
             self.enviar_clicktocall(self.voip_number_morador, session_id)
-            logger.info(f"[Flow] AMQP enviado para origin={self.voip_number_morador}")
+            logger.info(f"[Flow] AMQP enviado para origin={self.voip_number_morador}, tentativa={self.tentativas_chamada}")
         except Exception as e:
             logger.error(f"[Flow] Falha ao enviar AMQP: {e}")
             session_manager.enfileirar_visitor(
@@ -157,10 +165,43 @@ class ConversationFlow:
             )
             self.state = FlowState.FINALIZADO
             self._finalizar(session_id, session_manager)
+            return
+
+        ### PASSO 2: Agendar a verificação em 10s
+        loop = asyncio.get_event_loop()
+        loop.create_task(self.monitorar_morador_conexao(session_id, session_manager))
+
+
+    async def monitorar_morador_conexao(self, session_id: str, session_manager):
+        """
+        Aguarda 10s para ver se o estado mudou para ESPERANDO_MORADOR.
+        Se não mudou, tenta chamar de novo (até 2 tentativas).
+        Se mesmo assim não mudou, finaliza.
+        """
+        await asyncio.sleep(10)
+
+        # Verifica se neste meio tempo o morador atendeu (ESPERANDO_MORADOR)
+        if self.state == FlowState.ESPERANDO_MORADOR:
+            logger.info("[Flow] Morador conectou antes dos 10s. Não precisa retentar.")
+            return  # Está tudo bem.
+
+        # Se chegou aqui, ainda está CHAMANDO_MORADOR e não conectou.
+        if self.tentativas_chamada < 2:
+            # Tentar novamente
+            logger.info("[Flow] Morador não conectou em 10s. Vamos tentar ligar de novo.")
+            self.chamar_morador(session_id, session_manager)
+        else:
+            # 2 tentativas falharam
+            logger.info("[Flow] Morador não conectou após duas tentativas.")
+            session_manager.enfileirar_visitor(session_id,
+                "Não foi possível falar com o morador. Encaminharemos para a central e encerraremos a chamada."
+            )
+            self.state = FlowState.FINALIZADO
+            self._finalizar(session_id, session_manager)
+
 
     def enviar_clicktocall(self, morador_voip_number: str, guid: str):
         """
-        Envia de fato a mensagem AMQP com base no seu exemplo.
         Ajuste host/credentials/queue etc. conforme sua infra.
         """
         rabbit_host = 'mqdev.tecnofy.com.br'
@@ -211,10 +252,7 @@ class ConversationFlow:
         """
         Encerra a conversa e remove a sessão (se preferir).
         """
-        # Mensagem final para o morador (se estiver conectado)
         session_manager.enfileirar_resident(session_id, "Conversa encerrada.")
-        # Mensagem final para o visitante (se ainda estiver conectado)
         session_manager.enfileirar_visitor(session_id, "Conversa encerrada. Obrigado.")
 
-        # Remove do session_manager
         session_manager.end_session(session_id)
