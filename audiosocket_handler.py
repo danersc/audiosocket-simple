@@ -78,7 +78,23 @@ async def _encerrar_apos_delay(call_id, session_manager, delay_seconds=5.0):
     logger.info(f"[{call_id}] Agendando encerramento de sessão após {delay_seconds} segundos")
     await asyncio.sleep(delay_seconds)
     logger.info(f"[{call_id}] Delay concluído, iniciando encerramento da sessão")
-    session_manager.end_session(call_id)
+    
+    # Verificar se a sessão ainda existe antes de tentar encerrá-la
+    if session_manager.get_session(call_id):
+        logger.info(f"[{call_id}] Forçando encerramento via end_session")
+        session_manager.end_session(call_id)
+        
+        # Aguarda mais um momento para garantir que as tasks de envio de mensagens
+        # tiveram chance de processar o evento de encerramento
+        await asyncio.sleep(1.0)
+        
+        # Verificar se a sessão ainda existe após o encerramento inicial
+        if session_manager.get_session(call_id):
+            logger.warning(f"[{call_id}] Sessão ainda existe após encerramento inicial, forçando remoção")
+            # Remove diretamente a sessão como último recurso
+            session_manager._complete_session_termination(call_id)
+    else:
+        logger.info(f"[{call_id}] Sessão já foi encerrada, nenhuma ação necessária")
 
 
 async def send_goodbye_and_terminate(writer, session, call_id, role, call_logger=None):
@@ -387,7 +403,8 @@ async def enviar_mensagens_visitante(writer: asyncio.StreamWriter, call_id: str)
             # Marcar que a mensagem de despedida foi enviada
             final_message_sent = True
             
-            # Sinalizar que o encerramento está concluído
+            # Forçar encerramento imediato após despedida do visitante
+            logger.info(f"[{call_id}] Forçando encerramento da sessão após despedida do visitante")
             session_manager._complete_session_termination(call_id)
             break
             
@@ -705,7 +722,9 @@ async def receber_audio_morador(reader: asyncio.StreamReader, call_id: str):
                                             
                                             # Delay para garantir que as mensagens sejam processadas antes de encerrar
                                             # Será processada de forma assíncrona
-                                            asyncio.create_task(_encerrar_apos_delay(call_id, session_manager, 5.0))
+                                            logger.info(f"[{call_id}] Agendando encerramento da sessão após processamento da resposta")
+                                            session_manager.end_session(call_id)  # Sinaliza imediatamente terminação
+                                            asyncio.create_task(_encerrar_apos_delay(call_id, session_manager, 3.0))  # Força encerramento após 3 segundos
                                         elif authorization_result == "denied":
                                             # Enviar mensagem explícita ao visitante sobre negação
                                             visitor_msg = f"Infelizmente o morador não autorizou sua {intent_type if intent_type else 'entrada'} neste momento."
@@ -717,7 +736,9 @@ async def receber_audio_morador(reader: asyncio.StreamReader, call_id: str):
                                             session_manager.enfileirar_visitor(call_id, final_msg)
                                             
                                             # Delay para garantir que as mensagens sejam processadas antes de encerrar
-                                            asyncio.create_task(_encerrar_apos_delay(call_id, session_manager, 5.0))
+                                            logger.info(f"[{call_id}] Agendando encerramento da sessão após processamento da resposta")
+                                            session_manager.end_session(call_id)  # Sinaliza imediatamente terminação
+                                            asyncio.create_task(_encerrar_apos_delay(call_id, session_manager, 3.0))  # Força encerramento após 3 segundos
                             else:
                                 call_logger.log_error("TRANSCRIPTION_FAILED", 
                                                     "Falha ao transcrever áudio do morador", 
@@ -761,9 +782,12 @@ async def enviar_mensagens_morador(writer: asyncio.StreamWriter, call_id: str):
             # Marcar que a mensagem de despedida foi enviada
             final_message_sent = True
             
-            # Sinalizar que o encerramento está concluído
-            # Não chamamos _complete_session_termination aqui, pois o visitante 
-            # tem maior precedência e fará isso
+            # Forçar verificação de encerramento completo
+            await asyncio.sleep(1.0)
+            if session_manager.get_session(call_id):
+                logger.warning(f"[{call_id}] Forçando encerramento da sessão após despedida do morador")
+                session_manager._complete_session_termination(call_id)
+            
             break
         
         await asyncio.sleep(0.2)
