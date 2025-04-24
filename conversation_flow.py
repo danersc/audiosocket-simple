@@ -276,8 +276,35 @@ class ConversationFlow:
                 # Registrar log especial para sinalizar finalização
                 logger.info(f"[Flow] Autorização CONCLUÍDA - alterando estado para FINALIZADO")
                 
-                # Atualizar o state e iniciar encerramento imediato
+                # Atualizar o state e iniciar encerramento de forma controlada
                 self.state = FlowState.FINALIZADO
+                
+                # Também enviar mensagem AMQP para o sistema físico de autorização
+                from services.amqp_service import enviar_msg_autorizacao_morador
+                
+                # Criação do payload adequado
+                payload = {
+                    "call_id": session_id,
+                    "action": "authorize",
+                    "apartment": self.intent_data.get("apartment_number", ""),
+                    "resident": self.intent_data.get("resident_name", ""),
+                    "visitor": self.intent_data.get("interlocutor_name", ""),
+                    "intent_type": self.intent_data.get("intent_type", "entrada"),
+                    "authorization_result": "authorized"
+                }
+                
+                # Envia assíncronamente para não bloquear o fluxo
+                logger.info(f"[Flow] Enviando notificação de AUTORIZAÇÃO para sistema físico: {payload}")
+                try:
+                    success = enviar_msg_autorizacao_morador(payload)
+                    if success:
+                        logger.info(f"[Flow] Notificação enviada com sucesso para sistema físico")
+                    else:
+                        logger.error(f"[Flow] Falha ao enviar notificação para sistema físico")
+                except Exception as e:
+                    logger.error(f"[Flow] Erro ao notificar sistema físico: {str(e)}")
+                
+                # Finalmente, iniciar processo de finalização controlada
                 self._finalizar(session_id, session_manager)
                 
             # Lista expandida de termos de negação    
@@ -310,8 +337,35 @@ class ConversationFlow:
                 # Registrar log especial para sinalizar finalização
                 logger.info(f"[Flow] Negação CONCLUÍDA - alterando estado para FINALIZADO")
                 
-                # Atualizar o state e iniciar encerramento imediato 
+                # Atualizar o state e iniciar encerramento de forma controlada
                 self.state = FlowState.FINALIZADO
+                
+                # Também enviar mensagem AMQP para o sistema físico de autorização
+                from services.amqp_service import enviar_msg_autorizacao_morador
+                
+                # Criação do payload adequado
+                payload = {
+                    "call_id": session_id,
+                    "action": "deny",
+                    "apartment": self.intent_data.get("apartment_number", ""),
+                    "resident": self.intent_data.get("resident_name", ""),
+                    "visitor": self.intent_data.get("interlocutor_name", ""),
+                    "intent_type": self.intent_data.get("intent_type", "entrada"),
+                    "authorization_result": "denied"
+                }
+                
+                # Envia assíncronamente para não bloquear o fluxo
+                logger.info(f"[Flow] Enviando notificação de NEGAÇÃO para sistema físico: {payload}")
+                try:
+                    success = enviar_msg_autorizacao_morador(payload)
+                    if success:
+                        logger.info(f"[Flow] Notificação enviada com sucesso para sistema físico")
+                    else:
+                        logger.error(f"[Flow] Falha ao enviar notificação para sistema físico")
+                except Exception as e:
+                    logger.error(f"[Flow] Erro ao notificar sistema físico: {str(e)}")
+                
+                # Finalmente, iniciar processo de finalização controlada
                 self._finalizar(session_id, session_manager)
                 
             else:
