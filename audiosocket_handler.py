@@ -33,14 +33,16 @@ try:
     with open('config.json', 'r') as f:
         config = json.load(f)
         SILENCE_THRESHOLD_SECONDS = config['system'].get('silence_threshold_seconds', 2.0)
+        RESIDENT_MAX_SILENCE_SECONDS = config['system'].get('resident_max_silence_seconds', 45.0)
         TRANSMISSION_DELAY_MS = config['audio'].get('transmission_delay_ms', 20) / 1000  # Convertido para segundos
         POST_AUDIO_DELAY_SECONDS = config['audio'].get('post_audio_delay_seconds', 0.5)
         DISCARD_BUFFER_FRAMES = config['audio'].get('discard_buffer_frames', 25)
         GOODBYE_DELAY_SECONDS = config['system'].get('goodbye_delay_seconds', 3.0)  # Tempo para ouvir mensagem de despedida
-        logger.info(f"Configurações carregadas: silence={SILENCE_THRESHOLD_SECONDS}s, transmission_delay={TRANSMISSION_DELAY_MS}s, post_audio_delay={POST_AUDIO_DELAY_SECONDS}s, discard_buffer={DISCARD_BUFFER_FRAMES} frames, goodbye_delay={GOODBYE_DELAY_SECONDS}s")
+        logger.info(f"Configurações carregadas: silence={SILENCE_THRESHOLD_SECONDS}s, resident_max_silence={RESIDENT_MAX_SILENCE_SECONDS}s, transmission_delay={TRANSMISSION_DELAY_MS}s, post_audio_delay={POST_AUDIO_DELAY_SECONDS}s, discard_buffer={DISCARD_BUFFER_FRAMES} frames, goodbye_delay={GOODBYE_DELAY_SECONDS}s")
 except Exception as e:
     logger.warning(f"Erro ao carregar config.json, usando valores padrão: {e}")
     SILENCE_THRESHOLD_SECONDS = 2.0
+    RESIDENT_MAX_SILENCE_SECONDS = 45.0
     TRANSMISSION_DELAY_MS = 0.02
     POST_AUDIO_DELAY_SECONDS = 0.5
     DISCARD_BUFFER_FRAMES = 25
@@ -571,7 +573,8 @@ async def receber_audio_morador(reader: asyncio.StreamReader, call_id: str):
                         silence_start = asyncio.get_event_loop().time()
                     else:
                         silence_duration = asyncio.get_event_loop().time() - silence_start
-                        if silence_duration > SILENCE_THRESHOLD_SECONDS:
+                        # Usar um tempo de silêncio maior para o morador
+                        if silence_duration > RESIDENT_MAX_SILENCE_SECONDS:
                             is_speaking = False
                             
                             # Se não temos frames suficientes (< 1s), provavelmente é ruído
