@@ -1,10 +1,10 @@
 import os
 from crewai import Agent, LLM
 
-llm = LLM(
-    model="groq/meta-llama/llama-4-maverick-17b-128e-instruct",
-    temperature=0.7
-)
+# llm = LLM(
+#     model="groq/meta-llama/llama-4-maverick-17b-128e-instruct",
+#     temperature=0.7
+# )
 
 def identificator_person_agent() -> Agent:
     """
@@ -30,7 +30,7 @@ def identificator_person_agent() -> Agent:
         """,
         verbose=False,
         allow_delegation=False,
-        llm=llm,
+        # llm=llm,
     )
 
 def identificator_intent_agent() -> Agent:
@@ -54,7 +54,7 @@ def identificator_intent_agent() -> Agent:
         """,
         verbose=False,
         allow_delegation=False,
-        llm=llm,
+        # llm=llm,
     )
 
 def identificator_resident_apartment_agent() -> Agent:
@@ -78,7 +78,7 @@ def identificator_resident_apartment_agent() -> Agent:
         """,
         verbose=False,
         allow_delegation=False,
-        llm=llm,
+        # llm=llm,
     )
 
 def create_conversation_coordinator_agent() -> Agent:
@@ -107,7 +107,7 @@ def create_conversation_coordinator_agent() -> Agent:
         """,
         verbose=False,
         allow_delegation=False,
-        llm=llm,
+        # llm=llm,
     )
 
 
@@ -140,5 +140,5 @@ def create_conversation_monitor_agent() -> Agent:
         """,
         verbose=False,
         allow_delegation=False,
-        llm=llm,
+        # llm=llm,
     )
