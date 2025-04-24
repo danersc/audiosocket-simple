@@ -616,14 +616,15 @@ async def receber_audio_morador(reader: asyncio.StreamReader, call_id: str):
                         silence_start = asyncio.get_event_loop().time()
                     else:
                         silence_duration = asyncio.get_event_loop().time() - silence_start
-                        # Usar um tempo de silêncio maior para o morador
-                        if silence_duration > RESIDENT_MAX_SILENCE_SECONDS:
+                        # Usar um tempo de silêncio muito mais curto para respostas rápidas do morador
+                        if silence_duration > SILENCE_THRESHOLD_SECONDS:
                             is_speaking = False
+                            logger.info(f"[{call_id}] Silêncio de {silence_duration:.2f}s detectado após fala do morador")
                             
-                            # Se não temos frames suficientes, podemos estar perdendo "Sim" curto
+                            # Mesmo com fala muito curta, processamos, pois pode ser um "Sim" rápido
                             if len(frames) < 20:  # ~0.4 segundo de áudio (20 frames de 20ms)
-                                logger.debug(f"[{call_id}] Fala curta do morador detectada, mas prosseguindo mesmo assim ({len(frames)} frames)")
-                                # NÃO descartamos mais frames curtos para capturar "Sim" rápidos
+                                logger.info(f"[{call_id}] Fala CURTA do morador detectada: {len(frames)} frames (~{len(frames)*20}ms) - Processando mesmo assim")
+                                # NÃO descartamos frames curtos para capturar "Sim" rápidos
                             
                             # Calcular duração total da fala
                             speech_duration = (asyncio.get_event_loop().time() - speech_start) * 1000
@@ -661,6 +662,7 @@ async def receber_audio_morador(reader: asyncio.StreamReader, call_id: str):
                                     "processing_time_ms": round(processing_time, 2)
                                 })
                                 
+                                logger.info(f"[{call_id}] Resposta do morador processada: '{texto}'")
                                 # O estado pode ser atualizado pelo processamento
                             else:
                                 call_logger.log_error("TRANSCRIPTION_FAILED", 

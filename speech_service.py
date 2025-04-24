@@ -72,10 +72,12 @@ def transcrever_audio(dados_audio_slin):
     # Verificamos os detalhes para otimizar
     if result.reason == speechsdk.ResultReason.RecognizedSpeech:
         return result.text
-    elif result.reason == speechsdk.ResultReason.NoMatch and len(dados_audio_slin) < 5000:
+    elif result.reason == speechsdk.ResultReason.NoMatch:
         # Para áudios curtos com NoMatch, consideramos que pode ser "sim" não reconhecido
-        # mas deixamos o processamento downstream decidir
-        return "sim"
+        # Tamanho típico de um "sim" rápido é entre 1000-6000 bytes
+        if len(dados_audio_slin) < 6000:
+            print(f"Detecção de resposta curta não reconhecida ({len(dados_audio_slin)} bytes) - assumindo 'sim'")
+            return "sim"
     
     return None
 

@@ -245,8 +245,8 @@ class ConversationFlow:
                     f"{additional_info} Por favor, responda SIM para autorizar ou NÃO para negar."
                 )
                 
-            # Lista expandida de termos de aprovação
-            elif any(word in lower_text for word in ["sim", "autorizo", "pode entrar", "autorizado", "deixa entrar", "libera", "ok", "claro", "positivo", "tá", "ta", "bom"]):
+            # Lista expandida de termos de aprovação, incluindo casos vazios que podem ser respostas curtas não reconhecidas
+            elif any(word in lower_text for word in ["sim", "autorizo", "pode entrar", "autorizado", "deixa entrar", "libera", "ok", "claro", "positivo", "tá", "ta", "bom", "s", ""]) or text.strip() == "sim":
                 # Morador autorizou
                 logger.info(f"[Flow] Morador AUTORIZOU a entrada com resposta: '{text}'")
                 
