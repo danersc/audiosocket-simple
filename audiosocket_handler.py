@@ -723,7 +723,7 @@ async def receber_audio_morador(reader: asyncio.StreamReader, call_id: str):
                                             session_manager.enfileirar_visitor(call_id, visitor_msg)
                                             
                                             # Forçar mensagem final - essencial para fechar o ciclo
-                                            final_msg = f"Sua {intent_type if intent_type else 'entrada'} foi autorizada pelo morador. Obrigado por utilizar nossa portaria inteligente."
+                                            final_msg = f"Sua {intent_type} foi autorizada pelo morador. Obrigado por utilizar nossa portaria inteligente."
                                             session_manager.enfileirar_visitor(call_id, final_msg)
                                             
                                             # Não finalizar a sessão imediatamente, permitir que as mensagens sejam enviadas
@@ -737,7 +737,7 @@ async def receber_audio_morador(reader: asyncio.StreamReader, call_id: str):
                                             session_manager.enfileirar_visitor(call_id, visitor_msg)
                                             
                                             # Forçar mensagem final - essencial para fechar o ciclo
-                                            final_msg = f"Sua {intent_type if intent_type else 'entrada'} NÃO foi autorizada pelo morador. Obrigado por utilizar nossa portaria inteligente."
+                                            final_msg = f"Sua {intent_type} NÃO foi autorizada pelo morador. Obrigado por utilizar nossa portaria inteligente."
                                             session_manager.enfileirar_visitor(call_id, final_msg)
                                             
                                             # Não finalizar a sessão imediatamente, permitir que as mensagens sejam enviadas

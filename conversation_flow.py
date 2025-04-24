@@ -245,8 +245,8 @@ class ConversationFlow:
                     f"{additional_info} Por favor, responda SIM para autorizar ou NÃO para negar."
                 )
                 
-            # Lista expandida de termos de aprovação, incluindo casos vazios que podem ser respostas curtas não reconhecidas
-            elif any(word in lower_text for word in ["sim", "autorizo", "pode entrar", "autorizado", "deixa entrar", "libera", "ok", "claro", "positivo", "tá", "ta", "bom", "s", ""]) or text.strip() == "sim":
+            # Lista mais precisa e controlada de termos de aprovação - removida a opção de string vazia
+            elif any(word in lower_text for word in ["sim", "autorizo", "pode entrar", "autorizado", "deixa entrar", "libera", "ok", "claro", "positivo"]) or text.strip().lower() == "sim" or text.strip().lower() == "s":
                 # Morador autorizou
                 logger.info(f"[Flow] Morador AUTORIZOU a entrada com resposta: '{text}'")
                 
@@ -279,7 +279,9 @@ class ConversationFlow:
                 # Atualizar o state e iniciar encerramento de forma controlada
                 self.state = FlowState.FINALIZADO
                 
-                # Também enviar mensagem AMQP para o sistema físico de autorização
+                # Código para enviar mensagem AMQP para o sistema físico de autorização
+                # Desabilitado temporariamente para uso futuro
+                """
                 from services.amqp_service import enviar_msg_autorizacao_morador
                 
                 # Criação do payload adequado
@@ -303,6 +305,10 @@ class ConversationFlow:
                         logger.error(f"[Flow] Falha ao enviar notificação para sistema físico")
                 except Exception as e:
                     logger.error(f"[Flow] Erro ao notificar sistema físico: {str(e)}")
+                """
+                
+                # Log para desenvolvimento
+                logger.info(f"[Flow] Módulo AMQP para notificação de portaria desabilitado - uso futuro")
                 
                 # Finalmente, iniciar processo de finalização controlada
                 self._finalizar(session_id, session_manager)
@@ -340,7 +346,9 @@ class ConversationFlow:
                 # Atualizar o state e iniciar encerramento de forma controlada
                 self.state = FlowState.FINALIZADO
                 
-                # Também enviar mensagem AMQP para o sistema físico de autorização
+                # Código para enviar mensagem AMQP para o sistema físico de negação
+                # Desabilitado temporariamente para uso futuro
+                """
                 from services.amqp_service import enviar_msg_autorizacao_morador
                 
                 # Criação do payload adequado
@@ -364,6 +372,10 @@ class ConversationFlow:
                         logger.error(f"[Flow] Falha ao enviar notificação para sistema físico")
                 except Exception as e:
                     logger.error(f"[Flow] Erro ao notificar sistema físico: {str(e)}")
+                """
+                
+                # Log para desenvolvimento
+                logger.info(f"[Flow] Módulo AMQP para notificação de portaria desabilitado - uso futuro")
                 
                 # Finalmente, iniciar processo de finalização controlada
                 self._finalizar(session_id, session_manager)
