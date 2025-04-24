@@ -546,5 +546,6 @@ class ConversationFlow:
                 "Conversa finalizada. Obrigado por utilizar nosso sistema."
             )
         
-        # Sinalizar para as tarefas de AudioSocket que devem encerrar as conexões
-        session_manager.end_session(session_id)
+        # O encerramento efetivo da sessão será feito pelo audiosocket_handler
+        # após garantir que as mensagens foram enviadas usando um delay apropriado
+        logger.info(f"[Flow] Finalizando método _finalizar - audiosocket cuidará do encerramento efetivo da sessão")

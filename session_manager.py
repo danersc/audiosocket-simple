@@ -126,10 +126,13 @@ class SessionManager:
             logger.warning(f"[SessionManager] Tentativa de encerrar sessão inexistente: {session_id}")
             return
             
-        # Sinaliza para as tarefas que devem encerrar
-        logger.info(f"[SessionManager] Sinalizando para encerrar sessão {session_id}")
-        session.terminate_visitor_event.set()
-        session.terminate_resident_event.set()
+        # Evitar que end_session seja chamado múltiplas vezes
+        if not session.terminate_visitor_event.is_set() and not session.terminate_resident_event.is_set():
+            logger.info(f"[SessionManager] Sinalizando para encerrar sessão {session_id}")
+            session.terminate_visitor_event.set()
+            session.terminate_resident_event.set()
+        else:
+            logger.info(f"[SessionManager] Sinais de terminação já estão ativos para sessão {session_id}, ignorando")
         
         # Não removemos a sessão imediatamente, permitindo que as tarefas
         # de audiosocket terminem graciosamente

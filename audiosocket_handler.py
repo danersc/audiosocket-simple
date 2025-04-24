@@ -70,6 +70,17 @@ async def check_terminate_flag(session, call_id, role, call_logger=None):
         return False
 
 
+async def _encerrar_apos_delay(call_id, session_manager, delay_seconds=5.0):
+    """
+    Função auxiliar para encerrar a sessão após um delay, permitindo que
+    as mensagens enfileiradas sejam processadas e enviadas.
+    """
+    logger.info(f"[{call_id}] Agendando encerramento de sessão após {delay_seconds} segundos")
+    await asyncio.sleep(delay_seconds)
+    logger.info(f"[{call_id}] Delay concluído, iniciando encerramento da sessão")
+    session_manager.end_session(call_id)
+
+
 async def send_goodbye_and_terminate(writer, session, call_id, role, call_logger=None):
     """
     Envia uma mensagem de despedida final e encerra a conexão.
@@ -676,10 +687,6 @@ async def receber_audio_morador(reader: asyncio.StreamReader, call_id: str):
                                         authorization_result = intent_data.get("authorization_result", "")
                                         intent_type = intent_data.get("intent_type", "entrada")
                                         
-                                        # Iniciar processo de encerramento imediato após tratar a resposta
-                                        logger.info(f"[{call_id}] Iniciando encerramento da sessão após resposta do morador")
-                                        session_manager.end_session(call_id)
-                                        
                                         if authorization_result == "authorized":
                                             # Enviar mensagem explícita ao visitante sobre autorização
                                             if intent_type == "entrega":
@@ -695,6 +702,10 @@ async def receber_audio_morador(reader: asyncio.StreamReader, call_id: str):
                                             # Forçar mensagem final - essencial para fechar o ciclo
                                             final_msg = f"Sua {intent_type if intent_type else 'entrada'} foi autorizada pelo morador. Obrigado por utilizar nossa portaria inteligente."
                                             session_manager.enfileirar_visitor(call_id, final_msg)
+                                            
+                                            # Delay para garantir que as mensagens sejam processadas antes de encerrar
+                                            # Será processada de forma assíncrona
+                                            asyncio.create_task(_encerrar_apos_delay(call_id, session_manager, 5.0))
                                         elif authorization_result == "denied":
                                             # Enviar mensagem explícita ao visitante sobre negação
                                             visitor_msg = f"Infelizmente o morador não autorizou sua {intent_type if intent_type else 'entrada'} neste momento."
@@ -702,8 +713,11 @@ async def receber_audio_morador(reader: asyncio.StreamReader, call_id: str):
                                             session_manager.enfileirar_visitor(call_id, visitor_msg)
                                             
                                             # Forçar mensagem final - essencial para fechar o ciclo
-                                            final_msg = f"Sua {intent_type if intent_type else 'entrada'} não foi autorizada pelo morador. Obrigado por utilizar nossa portaria inteligente."
+                                            final_msg = f"Sua {intent_type if intent_type else 'entrada'} NÃO foi autorizada pelo morador. Obrigado por utilizar nossa portaria inteligente."
                                             session_manager.enfileirar_visitor(call_id, final_msg)
+                                            
+                                            # Delay para garantir que as mensagens sejam processadas antes de encerrar
+                                            asyncio.create_task(_encerrar_apos_delay(call_id, session_manager, 5.0))
                             else:
                                 call_logger.log_error("TRANSCRIPTION_FAILED", 
                                                     "Falha ao transcrever áudio do morador", 
