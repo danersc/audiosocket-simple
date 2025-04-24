@@ -250,19 +250,33 @@ class ConversationFlow:
                 # Morador autorizou
                 logger.info(f"[Flow] Morador AUTORIZOU a entrada com resposta: '{text}'")
                 
+                # Intent type para mensagem personalizada
+                intent_type = self.intent_data.get("intent_type", "")
+                intent_msg = ""
+                if intent_type == "entrega":
+                    intent_msg = "entrega"
+                elif intent_type == "visita":
+                    intent_msg = "visita"
+                else:
+                    intent_msg = "entrada"
+                
+                # Mensagens personalizadas para o tipo de intent
                 session_manager.enfileirar_resident(
                     session_id, 
-                    f"Obrigado! {visitor_name} será informado que a entrada foi autorizada."
+                    f"Obrigado! {visitor_name} será informado que a {intent_msg} foi autorizada."
                 )
                 session_manager.enfileirar_visitor(
                     session_id, 
-                    f"Ótima notícia! O morador autorizou sua entrada."
+                    f"Ótima notícia! O morador autorizou sua {intent_msg}."
                 )
                 
                 # Salvar resultado da autorização na sessão
                 self.intent_data["authorization_result"] = "authorized"
                 
-                # Atualizar o state e iniciar encerramento
+                # Registrar log especial para sinalizar finalização
+                logger.info(f"[Flow] Autorização CONCLUÍDA - alterando estado para FINALIZADO")
+                
+                # Atualizar o state e iniciar encerramento imediato
                 self.state = FlowState.FINALIZADO
                 self._finalizar(session_id, session_manager)
                 
@@ -271,19 +285,32 @@ class ConversationFlow:
                 # Morador negou
                 logger.info(f"[Flow] Morador NEGOU a entrada com resposta: '{text}'")
                 
+                # Intent type para mensagem personalizada
+                intent_type = self.intent_data.get("intent_type", "")
+                intent_msg = ""
+                if intent_type == "entrega":
+                    intent_msg = "entrega"
+                elif intent_type == "visita":
+                    intent_msg = "visita"
+                else:
+                    intent_msg = "entrada"
+                
                 session_manager.enfileirar_resident(
                     session_id, 
-                    f"Entendido. {visitor_name} será informado que a entrada não foi autorizada."
+                    f"Entendido. {visitor_name} será informado que a {intent_msg} não foi autorizada."
                 )
                 session_manager.enfileirar_visitor(
                     session_id, 
-                    "Infelizmente o morador não autorizou sua entrada neste momento."
+                    f"Infelizmente o morador não autorizou sua {intent_msg} neste momento."
                 )
                 
                 # Salvar resultado da autorização na sessão
                 self.intent_data["authorization_result"] = "denied"
                 
-                # Atualizar o state e iniciar encerramento
+                # Registrar log especial para sinalizar finalização
+                logger.info(f"[Flow] Negação CONCLUÍDA - alterando estado para FINALIZADO")
+                
+                # Atualizar o state e iniciar encerramento imediato 
                 self.state = FlowState.FINALIZADO
                 self._finalizar(session_id, session_manager)
                 
@@ -469,8 +496,13 @@ class ConversationFlow:
         """
         logger.info(f"[Flow] Iniciando encerramento controlado da sessão {session_id}")
         
+        # Carregar intenções
+        authorization_result = self.intent_data.get("authorization_result", "")
+        intent_type = self.intent_data.get("intent_type", "entrada")
+        logger.info(f"[Flow] Finalizando com authorization_result={authorization_result}, intent_type={intent_type}")
+            
         # Mensagens para os participantes
-        if self.state in [FlowState.CHAMANDO_MORADOR, FlowState.CALLING_IN_PROGRESS, FlowState.ESPERANDO_MORADOR]:
+        if self.state in [FlowState.CHAMANDO_MORADOR, FlowState.CALLING_IN_PROGRESS, FlowState.ESPERANDO_MORADOR, FlowState.FINALIZADO]:
             # Se o morador estava envolvido, avisar ambos
             session_manager.enfileirar_resident(
                 session_id, 

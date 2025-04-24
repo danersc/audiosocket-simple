@@ -663,7 +663,47 @@ async def receber_audio_morador(reader: asyncio.StreamReader, call_id: str):
                                 })
                                 
                                 logger.info(f"[{call_id}] Resposta do morador processada: '{texto}'")
-                                # O estado pode ser atualizado pelo processamento
+                                
+                                # Verificar se a sessão tem flag de finalização após processamento
+                                session = session_manager.get_session(call_id)
+                                if session and hasattr(session.flow, 'state'):
+                                    flow_state = session.flow.state
+                                    if str(flow_state) == 'FlowState.FINALIZADO':
+                                        logger.info(f"[{call_id}] Flow detectado como FINALIZADO após resposta do morador")
+                                        
+                                        # Garantir que o visitor receba notificação da autorização
+                                        intent_data = session.flow.intent_data if hasattr(session.flow, 'intent_data') else {}
+                                        authorization_result = intent_data.get("authorization_result", "")
+                                        intent_type = intent_data.get("intent_type", "entrada")
+                                        
+                                        # Iniciar processo de encerramento imediato após tratar a resposta
+                                        logger.info(f"[{call_id}] Iniciando encerramento da sessão após resposta do morador")
+                                        session_manager.end_session(call_id)
+                                        
+                                        if authorization_result == "authorized":
+                                            # Enviar mensagem explícita ao visitante sobre autorização
+                                            if intent_type == "entrega":
+                                                visitor_msg = "Ótima notícia! O morador autorizou sua entrega."
+                                            elif intent_type == "visita":
+                                                visitor_msg = "Ótima notícia! O morador autorizou sua visita."
+                                            else:
+                                                visitor_msg = "Ótima notícia! O morador autorizou sua entrada."
+                                            
+                                            logger.info(f"[{call_id}] Notificando visitante explicitamente da autorização: {visitor_msg}")
+                                            session_manager.enfileirar_visitor(call_id, visitor_msg)
+                                            
+                                            # Forçar mensagem final - essencial para fechar o ciclo
+                                            final_msg = f"Sua {intent_type if intent_type else 'entrada'} foi autorizada pelo morador. Obrigado por utilizar nossa portaria inteligente."
+                                            session_manager.enfileirar_visitor(call_id, final_msg)
+                                        elif authorization_result == "denied":
+                                            # Enviar mensagem explícita ao visitante sobre negação
+                                            visitor_msg = f"Infelizmente o morador não autorizou sua {intent_type if intent_type else 'entrada'} neste momento."
+                                            logger.info(f"[{call_id}] Notificando visitante explicitamente da negação: {visitor_msg}")
+                                            session_manager.enfileirar_visitor(call_id, visitor_msg)
+                                            
+                                            # Forçar mensagem final - essencial para fechar o ciclo
+                                            final_msg = f"Sua {intent_type if intent_type else 'entrada'} não foi autorizada pelo morador. Obrigado por utilizar nossa portaria inteligente."
+                                            session_manager.enfileirar_visitor(call_id, final_msg)
                             else:
                                 call_logger.log_error("TRANSCRIPTION_FAILED", 
                                                     "Falha ao transcrever áudio do morador", 
