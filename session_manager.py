@@ -3,7 +3,7 @@
 import asyncio
 import logging
 from typing import Dict, Optional, List
-from utils.uuid_generator import uuid7  # Usando nosso gerador de UUID v7
+from uuid import uuid4  # Usando UUID v4 padrão
 
 # Mantenha seu import do crew se quiser, mas não vamos chamar direto aqui
 # from ai.crew import process_user_message_with_coordinator
@@ -47,8 +47,8 @@ class SessionManager:
     def create_session(self, session_id: Optional[str] = None) -> SessionData:
         if not session_id:
             # Gerar UUID para identificação da sessão
-            session_id = str(uuid7())
-            logger.info(f"[SessionManager] Novo UUID v7 gerado: {session_id}")
+            session_id = str(uuid4())
+            logger.info(f"[SessionManager] Novo UUID gerado: {session_id}")
 
         if session_id not in self.sessions:
             self.sessions[session_id] = SessionData(session_id)

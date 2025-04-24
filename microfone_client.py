@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import socket, struct, threading, pyaudio, logging, time
-from utils.uuid_generator import uuid7
+import uuid
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 
@@ -9,8 +9,8 @@ KIND_ID, KIND_SLIN, KIND_HANGUP = 0x01, 0x10, 0x00
 class AudioSocketClient:
     def __init__(self, host='127.0.0.1', port=8080):  # Mudando para localhost
         self.host, self.port = host, port
-        # Gerando UUID v7 baseado em timestamp para melhor ordenação e compatibilidade
-        self.call_id = uuid7().bytes
+        # Gerando UUID para identificação da chamada
+        self.call_id = uuid.uuid4().bytes
         self.sample_rate, self.channels, self.chunk_size = 8000, 1, 320
         self.format = pyaudio.paInt16
         self.running = False
