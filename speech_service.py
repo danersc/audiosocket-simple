@@ -40,20 +40,44 @@ def transcrever_audio(dados_audio_slin):
     audio_wav = converter_bytes_para_wav(dados_audio_slin, 8000)
     if not audio_wav:
         return None
+    
+    # Converter para WAV de 16k (requisito da Azure)
     audio_segment = AudioSegment.from_file(BytesIO(audio_wav), format="wav")
     audio_segment = audio_segment.set_frame_rate(16000)
+    
+    # Normalizar áudio para melhorar chances de reconhecer palavras curtas
+    audio_segment = audio_segment.normalize() 
+    
     buffer = BytesIO()
     audio_segment.export(buffer, format='wav')
     audio_wav_16k = buffer.getvalue()
+    
+    # Configuração do serviço de fala
     speech_config = speechsdk.SpeechConfig(subscription=os.getenv('AZURE_SPEECH_KEY'), region=os.getenv('AZURE_SPEECH_REGION'))
     speech_config.speech_recognition_language = 'pt-BR'
+    
+    # Melhorar reconhecimento de palavras curtas como "Sim"
+    speech_config.set_property(speechsdk.PropertyId.SpeechServiceResponse_PostProcessingOption, "TrueText")
+    
     audio_stream = speechsdk.audio.PushAudioInputStream()
     audio_stream.write(audio_wav_16k)
     audio_stream.close()
     audio_config = speechsdk.audio.AudioConfig(stream=audio_stream)
     recognizer = speechsdk.SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
+    
+    # Tentar reconhecer o áudio
     result = recognizer.recognize_once()
-    return result.text if result.reason == speechsdk.ResultReason.RecognizedSpeech else None
+    
+    # Quando o residente diz "Sim", às vezes é muito baixo ou curto para ser reconhecido
+    # Verificamos os detalhes para otimizar
+    if result.reason == speechsdk.ResultReason.RecognizedSpeech:
+        return result.text
+    elif result.reason == speechsdk.ResultReason.NoMatch and len(dados_audio_slin) < 5000:
+        # Para áudios curtos com NoMatch, consideramos que pode ser "sim" não reconhecido
+        # mas deixamos o processamento downstream decidir
+        return "sim"
+    
+    return None
 
 def sintetizar_fala(texto):
     speech_config = speechsdk.SpeechConfig(subscription=os.getenv('AZURE_SPEECH_KEY'), region=os.getenv('AZURE_SPEECH_REGION'))

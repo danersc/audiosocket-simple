@@ -522,7 +522,7 @@ async def receber_audio_morador(reader: asyncio.StreamReader, call_id: str):
     e suporte para encerramento gracioso.
     """
     call_logger = CallLoggerManager.get_logger(call_id)
-    vad = webrtcvad.Vad(2)
+    vad = webrtcvad.Vad(3)  # Aumentando a sensibilidade do VAD para detectar falas curtas
     frames = []
     is_speaking = False
     silence_start = None
@@ -600,13 +600,14 @@ async def receber_audio_morador(reader: asyncio.StreamReader, call_id: str):
         
         # Processamos VAD apenas quando estamos em modo de escuta
         if is_listening_mode and kind == KIND_SLIN and len(audio_chunk) == 320:
+            # Para morador, usamos uma detecção mais agressiva para palavras curtas como "Sim"
             is_voice = vad.is_speech(audio_chunk, 8000)
             if is_voice:
                 frames.append(audio_chunk)
                 if not is_speaking:
                     is_speaking = True
                     speech_start = asyncio.get_event_loop().time()
-                    logger.debug(f"[{call_id}] Morador começou a falar.")
+                    logger.info(f"[{call_id}] Morador começou a falar.")  # Aumentado para INFO para melhor visibilidade
                     call_logger.log_speech_detected(is_visitor=False)
                 silence_start = None
             else:
@@ -619,11 +620,10 @@ async def receber_audio_morador(reader: asyncio.StreamReader, call_id: str):
                         if silence_duration > RESIDENT_MAX_SILENCE_SECONDS:
                             is_speaking = False
                             
-                            # Se não temos frames suficientes (< 1s), provavelmente é ruído
-                            if len(frames) < 50:  # ~1 segundo de áudio (50 frames de 20ms)
-                                logger.debug(f"[{call_id}] Descartando fala curta demais do morador ({len(frames)} frames)")
-                                frames = []
-                                continue
+                            # Se não temos frames suficientes, podemos estar perdendo "Sim" curto
+                            if len(frames) < 20:  # ~0.4 segundo de áudio (20 frames de 20ms)
+                                logger.debug(f"[{call_id}] Fala curta do morador detectada, mas prosseguindo mesmo assim ({len(frames)} frames)")
+                                # NÃO descartamos mais frames curtos para capturar "Sim" rápidos
                             
                             # Calcular duração total da fala
                             speech_duration = (asyncio.get_event_loop().time() - speech_start) * 1000

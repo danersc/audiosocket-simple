@@ -8,7 +8,7 @@
         "default_state": "STANDBY",
         "silence_threshold_seconds": 1.5,
         "max_transaction_time_seconds": 60,
-        "resident_max_silence_seconds": 45,
+        "resident_max_silence_seconds": 2.0,
         "goodbye_delay_seconds": 3.0
     },
     "audio": {
@@ -18,7 +18,7 @@
         "chunk_size": 320,
         "transmission_delay_ms": 10,
         "post_audio_delay_seconds": 0.3,
-        "discard_buffer_frames": 15
+        "discard_buffer_frames": 5
     },
     "call_termination": {
         "enabled": true,
