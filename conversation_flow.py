@@ -17,6 +17,7 @@ class FlowState(Enum):
     COLETANDO_DADOS = auto()
     VALIDADO = auto()
     CHAMANDO_MORADOR = auto()
+    CALLING_IN_PROGRESS = auto()  # Estado para processos de chamada em andamento (sem notificar o visitante)
     ESPERANDO_MORADOR = auto()
     FINALIZADO = auto()
 
@@ -32,7 +33,10 @@ class ConversationFlow:
         self.voip_number_morador: Optional[str] = None
 
         # Para controlar tentativas de chamada
-        self.tentativas_chamada = 0  ### PASSO 2
+        self.tentativas_chamada = 0
+        self.max_tentativas = 2
+        self.call_timeout_seconds = 10  # Tempo para aguardar antes de tentar novamente
+        self.calling_task = None  # Referência para a tarefa assíncrona de chamada
 
     # ---------------
     # VISITOR
@@ -53,6 +57,11 @@ class ConversationFlow:
                         session_id,
                         "Desculpe, tive um problema ao processar sua mensagem. Por favor, repita ou informe novamente seus dados."
                     )
+                    return
+                
+                # Se a chamada ao morador está em progresso, não processamos novas entradas do visitante
+                if self.state in [FlowState.CALLING_IN_PROGRESS, FlowState.ESPERANDO_MORADOR]:
+                    logger.info(f"[Flow] Ignorando entrada do visitante durante estado {self.state}")
                     return
                 
                 # Atualiza self.intent_data com quaisquer dados retornados
@@ -104,15 +113,17 @@ class ConversationFlow:
                             
                         self.state = FlowState.VALIDADO
 
-                        # Mensagem curta ao visitante:
+                        # Mensagem única ao visitante (sem informar detalhes das tentativas)
                         session_manager.enfileirar_visitor(
                             session_id,
-                            "Ok, vamos entrar em contato com o morador. Aguarde, por favor."
+                            "Aguarde enquanto entramos em contato com o morador..."
                         )
 
-                        # Avança para CHAMANDO_MORADOR
+                        # Avança para CHAMANDO_MORADOR e inicia o processo de chamada
                         self.state = FlowState.CHAMANDO_MORADOR
-                        self.chamar_morador(session_id, session_manager)
+                        # Iniciar o processo de chamada como uma task assíncrona
+                        loop = asyncio.get_event_loop()
+                        self.calling_task = loop.create_task(self.iniciar_processo_chamada(session_id, session_manager))
                     else:
                         # Mensagem com mais detalhes sobre o motivo da falha
                         if "best_match" in fuzzy_res and fuzzy_res.get("best_score", 0) > 50:
@@ -133,11 +144,10 @@ class ConversationFlow:
                     "Desculpe, ocorreu um erro ao processar sua solicitação. Por favor, tente novamente."
                 )
 
-        elif self.state == FlowState.CHAMANDO_MORADOR:
-            session_manager.enfileirar_visitor(
-                session_id,
-                "Ainda estou tentando chamar o morador, aguarde..."
-            )
+        elif self.state == FlowState.CHAMANDO_MORADOR or self.state == FlowState.CALLING_IN_PROGRESS:
+            # Não atualizamos o visitante durante o processo de chamada
+            # apenas log para debug
+            logger.debug(f"[Flow] Visitante tentou interagir durante processo de chamada em state={self.state}")
 
         elif self.state == FlowState.ESPERANDO_MORADOR:
             session_manager.enfileirar_visitor(
@@ -156,25 +166,85 @@ class ConversationFlow:
     def on_resident_message(self, session_id: str, text: str, session_manager):
         logger.debug(f"[Flow] Resident message in state={self.state}, text='{text}'")
 
-        if self.state == FlowState.CHAMANDO_MORADOR:
+        if self.state == FlowState.CHAMANDO_MORADOR or self.state == FlowState.CALLING_IN_PROGRESS:
             # Significa que o morador atendeu e começou a falar
             self.state = FlowState.ESPERANDO_MORADOR
-            session_manager.enfileirar_resident(session_id, "Olá, morador! O visitante pediu acesso...")
-            session_manager.enfileirar_visitor(session_id, "O morador atendeu. Aguarde a resposta.")
+            
+            # Formatar dados do visitante para apresentar ao morador
+            visitor_name = self.intent_data.get("interlocutor_name", "")
+            intent_type = self.intent_data.get("intent_type", "")
+            apt = self.intent_data.get("apartment_number", "")
+            
+            # Mensagem detalhada para o morador com o contexto da visita
+            intent_desc = {
+                "entrega": "uma entrega",
+                "visita": "uma visita",
+                "servico": "um serviço",
+            }.get(intent_type, "um acesso")
+            
+            resident_msg = (f"Olá morador do apartamento {apt}! "
+                           f"{visitor_name} está na portaria solicitando {intent_desc}. "
+                           f"Você autoriza a entrada? Responda SIM ou NÃO.")
+            
+            session_manager.enfileirar_resident(session_id, resident_msg)
+            session_manager.enfileirar_visitor(session_id, "O morador atendeu. Aguarde enquanto verificamos sua autorização...")
 
         elif self.state == FlowState.ESPERANDO_MORADOR:
-            # Esperamos SIM ou NÃO
+            # Processamento da resposta do morador
             lower_text = text.lower()
-            if "sim" in lower_text:
-                session_manager.enfileirar_visitor(session_id, "Morador autorizou sua entrada!")
+            visitor_name = self.intent_data.get("interlocutor_name", "Visitante")
+            
+            # Verificar se contém pergunta antes de checar sim/não
+            if "quem" in lower_text or "?" in lower_text:
+                # Morador está pedindo mais informações
+                intent_type = self.intent_data.get("intent_type", "")
+                apt = self.intent_data.get("apartment_number", "")
+                
+                # Mensagem detalhada sobre o visitante
+                additional_info = f"{visitor_name} está na portaria para {intent_type}. "
+                if intent_type == "entrega":
+                    additional_info += "É uma entrega para seu apartamento."
+                elif intent_type == "visita":
+                    additional_info += "É uma visita pessoal."
+                
+                # Aguarda decisão após fornecer mais informações
+                session_manager.enfileirar_resident(
+                    session_id,
+                    f"{additional_info} Por favor, responda SIM para autorizar ou NÃO para negar."
+                )
+                
+            elif "sim" in lower_text or "autorizo" in lower_text or "pode entrar" in lower_text:
+                # Morador autorizou
+                session_manager.enfileirar_resident(
+                    session_id, 
+                    f"Obrigado! {visitor_name} será informado que a entrada foi autorizada."
+                )
+                session_manager.enfileirar_visitor(
+                    session_id, 
+                    f"Ótima notícia! O morador autorizou sua entrada."
+                )
                 self.state = FlowState.FINALIZADO
                 self._finalizar(session_id, session_manager)
-            elif "não" in lower_text or "nao" in lower_text:
-                session_manager.enfileirar_visitor(session_id, "Morador negou a entrada.")
+                
+            elif "não" in lower_text or "nao" in lower_text or "nego" in lower_text:
+                # Morador negou
+                session_manager.enfileirar_resident(
+                    session_id, 
+                    f"Entendido. {visitor_name} será informado que a entrada não foi autorizada."
+                )
+                session_manager.enfileirar_visitor(
+                    session_id, 
+                    "Infelizmente o morador não autorizou sua entrada neste momento."
+                )
                 self.state = FlowState.FINALIZADO
                 self._finalizar(session_id, session_manager)
+                
             else:
-                session_manager.enfileirar_resident(session_id, "Não entendi. Responda SIM ou NÃO.")
+                # Resposta não reconhecida
+                session_manager.enfileirar_resident(
+                    session_id, 
+                    "Desculpe, não consegui entender sua resposta. Por favor, responda SIM para autorizar a entrada ou NÃO para negar."
+                )
 
         elif self.state == FlowState.FINALIZADO:
             session_manager.enfileirar_resident(session_id, "O fluxo já foi finalizado. Obrigado.")
@@ -190,69 +260,66 @@ class ConversationFlow:
             session_manager.enfileirar_resident(session_id, "Ainda estou preparando a chamada, aguarde.")
 
     # ----------------------------------------------------
-    #  CHAMAR MORADOR via AMQP
+    #  PROCESSO DE CHAMADA AO MORADOR (ASSÍNCRONO)
     # ----------------------------------------------------
-    def chamar_morador(self, session_id: str, session_manager):
+    async def iniciar_processo_chamada(self, session_id: str, session_manager):
         """
-        Envia a mensagem AMQP para gerar a ligação com o morador.
-        E agenda a verificação da conexão em 10s.
+        Gerencia o processo completo de chamada ao morador de forma assíncrona,
+        sem notificar o visitante sobre cada etapa.
         """
         if not self.voip_number_morador:
             logger.warning("[Flow] voip_number_morador está vazio, não posso discar.")
-            return
-
-        # Primeira tentativa ou re-tentativa
-        self.tentativas_chamada += 1
-
-        session_manager.enfileirar_visitor(
-            session_id,
-            f"Discando para {self.voip_number_morador}... (Tentativa {self.tentativas_chamada})"
-        )
-
-        try:
-            self.enviar_clicktocall(self.voip_number_morador, session_id)
-            logger.info(f"[Flow] AMQP enviado para origin={self.voip_number_morador}, tentativa={self.tentativas_chamada}")
-        except Exception as e:
-            logger.error(f"[Flow] Falha ao enviar AMQP: {e}")
             session_manager.enfileirar_visitor(
                 session_id,
-                "Não foi possível chamar o morador. Tente novamente mais tarde."
+                "Não foi possível entrar em contato com o morador. Tente novamente mais tarde."
             )
             self.state = FlowState.FINALIZADO
             self._finalizar(session_id, session_manager)
             return
 
-        ### PASSO 2: Agendar a verificação em 10s
-        loop = asyncio.get_event_loop()
-        loop.create_task(self.monitorar_morador_conexao(session_id, session_manager))
+        # Mudamos para o estado de processamento em andamento
+        self.state = FlowState.CALLING_IN_PROGRESS
+        
+        # Realizar tentativas de chamada sem notificar o visitante
+        while self.tentativas_chamada < self.max_tentativas:
+            self.tentativas_chamada += 1
+            logger.info(f"[Flow] Tentativa {self.tentativas_chamada} de chamar o morador {self.voip_number_morador}")
+            
+            try:
+                # Enviar comando para fazer a ligação
+                self.enviar_clicktocall(self.voip_number_morador, session_id)
+                logger.info(f"[Flow] AMQP enviado para origin={self.voip_number_morador}, tentativa={self.tentativas_chamada}")
 
-
-    async def monitorar_morador_conexao(self, session_id: str, session_manager):
-        """
-        Aguarda 10s para ver se o estado mudou para ESPERANDO_MORADOR.
-        Se não mudou, tenta chamar de novo (até 2 tentativas).
-        Se mesmo assim não mudou, finaliza.
-        """
-        await asyncio.sleep(10)
-
-        # Verifica se neste meio tempo o morador atendeu (ESPERANDO_MORADOR)
-        if self.state == FlowState.ESPERANDO_MORADOR:
-            logger.info("[Flow] Morador conectou antes dos 10s. Não precisa retentar.")
-            return  # Está tudo bem.
-
-        # Se chegou aqui, ainda está CHAMANDO_MORADOR e não conectou.
-        if self.tentativas_chamada < 2:
-            # Tentar novamente
-            logger.info("[Flow] Morador não conectou em 10s. Vamos tentar ligar de novo.")
-            self.chamar_morador(session_id, session_manager)
-        else:
-            # 2 tentativas falharam
-            logger.info("[Flow] Morador não conectou após duas tentativas.")
-            session_manager.enfileirar_visitor(session_id,
-                "Não foi possível falar com o morador. Encaminharemos para a central e encerraremos a chamada."
-            )
-            self.state = FlowState.FINALIZADO
-            self._finalizar(session_id, session_manager)
+                # Aguarda o timeout para ver se o morador atende
+                for _ in range(self.call_timeout_seconds):
+                    await asyncio.sleep(1)  # Verifica a cada 1 segundo
+                    # Se o morador atendeu neste meio tempo, o estado terá mudado
+                    if self.state == FlowState.ESPERANDO_MORADOR:
+                        logger.info(f"[Flow] Morador atendeu na tentativa {self.tentativas_chamada}")
+                        return  # Processo concluído com sucesso
+                
+                # Se chegou aqui, o timeout foi atingido e o morador não atendeu
+                logger.info(f"[Flow] Timeout de {self.call_timeout_seconds}s atingido na tentativa {self.tentativas_chamada}")
+                
+            except Exception as e:
+                logger.error(f"[Flow] Falha ao enviar AMQP: {e}")
+                if self.tentativas_chamada >= self.max_tentativas:
+                    break  # Sai do loop após a última tentativa falhar
+            
+            # Aguarda um breve período entre tentativas
+            if self.tentativas_chamada < self.max_tentativas:
+                await asyncio.sleep(1)  # Pequeno intervalo entre tentativas
+        
+        # Se todas as tentativas falharam, notifica o visitante
+        logger.info(f"[Flow] Todas as {self.max_tentativas} tentativas de contato com o morador falharam")
+        session_manager.enfileirar_visitor(
+            session_id,
+            "Não foi possível contatar o morador no momento. Por favor, tente novamente mais tarde."
+        )
+        
+        # Finaliza o processo
+        self.state = FlowState.FINALIZADO
+        self._finalizar(session_id, session_manager)
 
 
     def enviar_clicktocall(self, morador_voip_number: str, guid: str):
@@ -262,8 +329,8 @@ class ConversationFlow:
         rabbit_host = 'mqdev.tecnofy.com.br'
         rabbit_user = 'fonia'
         rabbit_password = 'fonia123'
-        rabbit_vhost = 'DEV'
-        queue_name = 'voip1-in'
+        rabbit_vhost = 'voip'
+        queue_name = 'api-to-voip1'
 
         credentials = pika.PlainCredentials(rabbit_user, rabbit_password)
         parameters = pika.ConnectionParameters(
