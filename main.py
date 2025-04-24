@@ -18,11 +18,17 @@ async def main():
     logging.info("Pré-sintetizando frases comuns...")
     pre_sintetizar_frases_comuns()
     
+    # Iniciar servidor para visitantes
     server_visitante = await asyncio.start_server(iniciar_servidor_audiosocket_visitante, '0.0.0.0', 8080)
+    logging.info("Servidor AudioSocket para VISITANTES iniciado na porta 8080")
+    
+    # Iniciar servidor para moradores 
+    # IMPORTANTE: Este servidor deve receber conexões com o mesmo GUID
+    # da sessão original do visitante para manter o contexto da conversa
     server_morador = await asyncio.start_server(iniciar_servidor_audiosocket_morador, '0.0.0.0', 8081)
-
-    logging.info("Servidor visitante: 0.0.0.0:8080")
-    logging.info("Servidor morador:   0.0.0.0:8081")
+    logging.info("Servidor AudioSocket para MORADORES iniciado na porta 8081")
+    
+    logging.info("Sistema pronto para processar chamadas de visitantes e moradores")
 
     async with server_visitante, server_morador:
         await asyncio.gather(

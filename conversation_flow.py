@@ -287,8 +287,16 @@ class ConversationFlow:
             
             try:
                 # Enviar comando para fazer a ligação
-                self.enviar_clicktocall(self.voip_number_morador, session_id)
-                logger.info(f"[Flow] AMQP enviado para origin={self.voip_number_morador}, tentativa={self.tentativas_chamada}")
+                success = self.enviar_clicktocall(self.voip_number_morador, session_id)
+                
+                if not success:
+                    logger.error(f"[Flow] Falha ao enviar clicktocall na tentativa {self.tentativas_chamada}")
+                    # Se falhou no envio e é a última tentativa, sair do loop
+                    if self.tentativas_chamada >= self.max_tentativas:
+                        break
+                    continue  # Tenta novamente na próxima iteração
+                
+                logger.info(f"[Flow] AMQP enviado com sucesso para origin={self.voip_number_morador}, tentativa={self.tentativas_chamada}")
 
                 # Aguarda o timeout para ver se o morador atende
                 for _ in range(self.call_timeout_seconds):
@@ -302,7 +310,7 @@ class ConversationFlow:
                 logger.info(f"[Flow] Timeout de {self.call_timeout_seconds}s atingido na tentativa {self.tentativas_chamada}")
                 
             except Exception as e:
-                logger.error(f"[Flow] Falha ao enviar AMQP: {e}")
+                logger.error(f"[Flow] Erro inesperado ao processar chamada: {e}")
                 if self.tentativas_chamada >= self.max_tentativas:
                     break  # Sai do loop após a última tentativa falhar
             
@@ -324,7 +332,8 @@ class ConversationFlow:
 
     def enviar_clicktocall(self, morador_voip_number: str, guid: str):
         """
-        Ajuste host/credentials/queue etc. conforme sua infra.
+        Envia solicitação de chamada para o morador via AMQP, garantindo
+        que o mesmo GUID da sessão original seja utilizado como identificador.
         """
         rabbit_host = 'mqdev.tecnofy.com.br'
         rabbit_user = 'fonia'
@@ -332,40 +341,62 @@ class ConversationFlow:
         rabbit_vhost = 'voip'
         queue_name = 'api-to-voip1'
 
-        credentials = pika.PlainCredentials(rabbit_user, rabbit_password)
-        parameters = pika.ConnectionParameters(
-            host=rabbit_host,
-            virtual_host=rabbit_vhost,
-            credentials=credentials
-        )
+        # Verificação de segurança - GUID não pode estar vazio
+        if not guid or len(guid) < 8:
+            logger.error(f"[Flow] GUID inválido para clicktocall: '{guid}'")
+            return False
 
-        connection = pika.BlockingConnection(parameters)
-        channel = connection.channel()
-        channel.queue_declare(queue=queue_name, durable=True)
+        # Verificação de segurança - número do morador não pode estar vazio
+        if not morador_voip_number:
+            logger.error(f"[Flow] Número do morador inválido: '{morador_voip_number}'")
+            return False
 
-        payload = {
-            "data": {
-                "destiny": "IA",
-                "guid": guid,
-                "license": "123456789012",
-                "origin": morador_voip_number
-            },
-            "operation": {
-                "eventcode": "8001",
-                "guid": "cmd-" + guid,
-                "msg": "",
-                "timestamp": 1740696805,
-                "type": "clicktocall"
+        try:
+            credentials = pika.PlainCredentials(rabbit_user, rabbit_password)
+            parameters = pika.ConnectionParameters(
+                host=rabbit_host,
+                virtual_host=rabbit_vhost,
+                credentials=credentials
+            )
+
+            connection = pika.BlockingConnection(parameters)
+            channel = connection.channel()
+            channel.queue_declare(queue=queue_name, durable=True)
+
+            # Timestamp atual para o evento
+            current_timestamp = int(time.time())
+
+            # IMPORTANTE: Garantir que o mesmo GUID da sessão seja usado
+            # na chamada para o morador, para que os contextos se conectem
+            payload = {
+                "data": {
+                    "destiny": "IA",
+                    "guid": guid,  # GUID da sessão original
+                    "license": "123456789012",
+                    "origin": morador_voip_number
+                },
+                "operation": {
+                    "eventcode": "8001",
+                    "guid": "cmd-" + guid,
+                    "msg": "",
+                    "timestamp": current_timestamp,
+                    "type": "clicktocall"
+                }
             }
-        }
 
-        channel.basic_publish(
-            exchange='',
-            routing_key=queue_name,
-            body=json.dumps(payload)
-        )
-        logger.info(f"[Flow] Mensagem AMQP enviada: origin={morador_voip_number}, guid={guid}")
-        connection.close()
+            channel.basic_publish(
+                exchange='',
+                routing_key=queue_name,
+                body=json.dumps(payload)
+            )
+            
+            logger.info(f"[Flow] Mensagem AMQP enviada: origin={morador_voip_number}, guid={guid}, timestamp={current_timestamp}")
+            connection.close()
+            return True
+            
+        except Exception as e:
+            logger.error(f"[Flow] Erro ao enviar AMQP clicktocall: {e}")
+            return False
 
     # ----------------------------------------------------
     # FINALIZAR (chamar end_session, etc.)

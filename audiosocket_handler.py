@@ -755,16 +755,20 @@ async def iniciar_servidor_audiosocket_morador(reader, writer):
         "call_id": call_id
     })
 
-    session_manager.create_session(call_id)
-
-    # SAUDAÇÃO MORADOR:
-    welcome_msg = "Olá, morador! Você está em ligação com a portaria inteligente."
-    call_logger.log_event("GREETING_RESIDENT", {"message": welcome_msg})
-    
-    session_manager.enfileirar_resident(
-        call_id,
-        welcome_msg
-    )
+    # Verificar se sessão já existe (deve existir se o fluxo estiver correto)
+    existing_session = session_manager.get_session(call_id)
+    if not existing_session:
+        logger.warning(f"[MORADOR] Call ID {call_id} não encontrado como sessão existente. Criando nova sessão.")
+        session_manager.create_session(call_id)
+        
+        # SAUDAÇÃO MORADOR para nova sessão:
+        welcome_msg = "Olá, morador! Você está em ligação com a portaria inteligente."
+        call_logger.log_event("GREETING_RESIDENT", {"message": welcome_msg})
+        session_manager.enfileirar_resident(call_id, welcome_msg)
+    else:
+        logger.info(f"[MORADOR] Sessão existente encontrada para Call ID: {call_id}. Conectando morador ao fluxo existente.")
+        # Não enviar saudação, a conversa já deve estar em andamento no fluxo
+        # A mensagem para o morador será enviada pelo ConversationFlow
 
     task1 = asyncio.create_task(receber_audio_morador(reader, call_id))
     task2 = asyncio.create_task(enviar_mensagens_morador(writer, call_id))
