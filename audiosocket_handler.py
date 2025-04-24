@@ -74,36 +74,75 @@ async def send_goodbye_and_terminate(writer, session, call_id, role, call_logger
     """
     Envia uma mensagem de despedida final e encerra a conexão.
     """
-    # Mensagem de despedida com base no papel (visitor/resident)
-    goodbye_msg = "Obrigado por utilizar nossa portaria inteligente. Até a próxima!"
-    
-    # Determinar qual fila de mensagens usar
-    if role == "visitante":
-        session_manager.enfileirar_visitor(call_id, goodbye_msg)
-    else:
-        session_manager.enfileirar_resident(call_id, goodbye_msg)
-    
-    # Registrar evento de envio de despedida
-    if call_logger:
-        call_logger.log_event("SENDING_GOODBYE", {
-            "role": role,
-            "message": goodbye_msg
-        })
-    
-    # Aguardar um tempo para que a mensagem seja enviada e ouvida
-    logger.info(f"[{call_id}] Aguardando {GOODBYE_DELAY_SECONDS}s para encerrar conexão com {role}")
-    await asyncio.sleep(GOODBYE_DELAY_SECONDS)
-    
-    # Fechar a conexão
-    if call_logger:
-        call_logger.log_event("CONNECTION_CLOSING", {
-            "role": role,
-            "reason": "controlled_termination"
-        })
-    
-    writer.close()
-    await writer.wait_closed()
-    logger.info(f"[{call_id}] Conexão com {role} encerrada com sucesso")
+    try:
+        # Obter mensagem de despedida baseada na configuração
+        # Decisão baseada no papel e no estado da conversa
+        if role == "visitante":
+            if session.intent_data.get("authorization_result") == "authorized":
+                goodbye_msg = config.get('call_termination', {}).get('goodbye_messages', {}).get('visitor', {}).get(
+                    'authorized', "Sua entrada foi autorizada. Obrigado por utilizar nossa portaria inteligente.")
+            elif session.intent_data.get("authorization_result") == "denied":
+                goodbye_msg = config.get('call_termination', {}).get('goodbye_messages', {}).get('visitor', {}).get(
+                    'denied', "Sua entrada não foi autorizada. Obrigado por utilizar nossa portaria inteligente.")
+            else:
+                goodbye_msg = config.get('call_termination', {}).get('goodbye_messages', {}).get('visitor', {}).get(
+                    'default', "Obrigado por utilizar nossa portaria inteligente. Até a próxima!")
+        else:
+            goodbye_msg = config.get('call_termination', {}).get('goodbye_messages', {}).get('resident', {}).get(
+                'default', "Obrigado pela sua resposta. Encerrando a chamada.")
+        
+        # Registrar evento de envio de despedida
+        if call_logger:
+            call_logger.log_event("SENDING_GOODBYE", {
+                "role": role,
+                "message": goodbye_msg
+            })
+        
+        # Sintetizar a mensagem de despedida e enviar diretamente (sem enfileirar)
+        logger.info(f"[{call_id}] Enviando mensagem de despedida diretamente para {role}: {goodbye_msg}")
+        audio_resposta = await sintetizar_fala_async(goodbye_msg)
+        
+        if audio_resposta:
+            # Enviar o áudio diretamente
+            await enviar_audio(writer, audio_resposta, call_id=call_id, origem=role.capitalize())
+            
+            # Registrar evento de envio bem-sucedido
+            if call_logger:
+                call_logger.log_event("GOODBYE_SENT_SUCCESSFULLY", {
+                    "role": role,
+                    "message": goodbye_msg,
+                    "audio_size": len(audio_resposta)
+                })
+                
+            # Aguardar um tempo para que a mensagem seja ouvida
+            logger.info(f"[{call_id}] Aguardando {GOODBYE_DELAY_SECONDS}s para o {role} ouvir a despedida")
+            await asyncio.sleep(GOODBYE_DELAY_SECONDS)
+        else:
+            logger.error(f"[{call_id}] Falha ao sintetizar mensagem de despedida para {role}")
+            if call_logger:
+                call_logger.log_error("GOODBYE_SYNTHESIS_FAILED", 
+                                    f"Falha ao sintetizar mensagem de despedida para {role}", 
+                                    {"message": goodbye_msg})
+        
+        # Fechar a conexão
+        if call_logger:
+            call_logger.log_event("CONNECTION_CLOSING", {
+                "role": role,
+                "reason": "controlled_termination"
+            })
+        
+        writer.close()
+        await writer.wait_closed()
+        logger.info(f"[{call_id}] Conexão com {role} encerrada com sucesso")
+        
+    except Exception as e:
+        logger.error(f"[{call_id}] Erro ao enviar despedida para {role}: {e}")
+        # Ainda assim, tentar fechar a conexão em caso de erro
+        try:
+            writer.close()
+            await writer.wait_closed()
+        except:
+            pass
 
 
 async def enviar_audio(writer: asyncio.StreamWriter, dados_audio: bytes, call_id: str = None, origem="desconhecida"):
@@ -759,16 +798,31 @@ async def iniciar_servidor_audiosocket_morador(reader, writer):
     existing_session = session_manager.get_session(call_id)
     if not existing_session:
         logger.warning(f"[MORADOR] Call ID {call_id} não encontrado como sessão existente. Criando nova sessão.")
-        session_manager.create_session(call_id)
+        
+        # Criar uma nova sessão - isto não deveria acontecer em circunstâncias normais
+        session = session_manager.create_session(call_id)
         
         # SAUDAÇÃO MORADOR para nova sessão:
         welcome_msg = "Olá, morador! Você está em ligação com a portaria inteligente."
         call_logger.log_event("GREETING_RESIDENT", {"message": welcome_msg})
         session_manager.enfileirar_resident(call_id, welcome_msg)
+        
+        # Atualizar estado do morador para USER_TURN para permitir interação inicial
+        session.resident_state = "USER_TURN"
     else:
         logger.info(f"[MORADOR] Sessão existente encontrada para Call ID: {call_id}. Conectando morador ao fluxo existente.")
+        
+        # Transferir intent_data para a sessão do morador se necessário
+        if hasattr(existing_session.flow, 'intent_data') and existing_session.flow.intent_data:
+            existing_session.intent_data = existing_session.flow.intent_data
+            logger.info(f"[MORADOR] Intent data transferido para sessão: {existing_session.intent_data}")
+            
+        # Atualizar estado do morador para USER_TURN para permitir interação
+        existing_session.resident_state = "USER_TURN"
+        
         # Não enviar saudação, a conversa já deve estar em andamento no fluxo
-        # A mensagem para o morador será enviada pelo ConversationFlow
+        # A mensagem para o morador será enviada pelo ConversationFlow quando
+        # processar a primeira mensagem do morador
 
     task1 = asyncio.create_task(receber_audio_morador(reader, call_id))
     task2 = asyncio.create_task(enviar_mensagens_morador(writer, call_id))

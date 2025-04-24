@@ -114,6 +114,7 @@ if not morador_voip_number:
 
 ## Sumário das Alterações
 
+### Versão 1.0 (25/04/2025)
 1. **conversation_flow.py**:
    - Importado módulo `time` para timestamp da mensagem AMQP
    - Melhorado `iniciar_processo_chamada` com logging detalhado
@@ -132,6 +133,24 @@ if not morador_voip_number:
 4. **main.py**:
    - Melhorado logging da inicialização dos servidores
    - Adicionado comentários sobre a importância da preservação do GUID
+
+### Versão 1.1 (25/04/2025 - Atualização)
+
+1. **Melhorias na conexão de morador**:
+   - Adicionada mensagem de saudação inicial simples para evitar queda imediata
+   - Dividida a mensagem inicial em duas partes para dar tempo ao morador processar
+   - Implementada verificação e tratamento para campos vazios no intent_data
+   - Transferência explícita de intent_data entre a sessão do fluxo e a sessão principal
+
+2. **Melhorias no envio de mensagens de despedida**:
+   - Modificada função `send_goodbye_and_terminate` para enviar áudio diretamente, sem enfileirar
+   - Adicionada seleção de mensagem de despedida com base no resultado da autorização
+   - Implementado tratamento de erros robusto para garantir que a mensagem seja ouvida
+   - Adicionados logs detalhados para rastrear o processo de despedida
+
+3. **Rastreamento do resultado da autorização**:
+   - Campo `authorization_result` adicionado ao intent_data para rastrear aprovação/negação
+   - Resultado usado para selecionar a mensagem de despedida apropriada
 
 Data da implementação: 25/04/2025
 

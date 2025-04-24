@@ -170,11 +170,18 @@ class ConversationFlow:
         if self.state == FlowState.CHAMANDO_MORADOR or self.state == FlowState.CALLING_IN_PROGRESS:
             # Significa que o morador atendeu e começou a falar
             self.state = FlowState.ESPERANDO_MORADOR
+            logger.info(f"[Flow] Morador atendeu chamada para sessão {session_id}. Mudando para estado ESPERANDO_MORADOR")
             
-            # Formatar dados do visitante para apresentar ao morador
+            # Verificar se temos os dados necessários para continuar
             visitor_name = self.intent_data.get("interlocutor_name", "")
             intent_type = self.intent_data.get("intent_type", "")
             apt = self.intent_data.get("apartment_number", "")
+            
+            if not visitor_name or not intent_type or not apt:
+                logger.warning(f"[Flow] Dados incompletos ao atender morador: visitor={visitor_name}, intent={intent_type}, apt={apt}")
+                visitor_name = visitor_name or "Um visitante"
+                intent_type = intent_type or "acesso"
+                apt = apt or "[não identificado]"
             
             # Mensagem detalhada para o morador com o contexto da visita
             intent_desc = {
@@ -183,11 +190,19 @@ class ConversationFlow:
                 "servico": "um serviço",
             }.get(intent_type, "um acesso")
             
-            resident_msg = (f"Olá morador do apartamento {apt}! "
-                           f"{visitor_name} está na portaria solicitando {intent_desc}. "
-                           f"Você autoriza a entrada? Responda SIM ou NÃO.")
+            # Mensagem de saudação com pausa para evitar que a chamada caia imediatamente
+            initial_greeting = f"Olá, morador do apartamento {apt}. Um momento por favor..."
+            session_manager.enfileirar_resident(session_id, initial_greeting)
             
+            # Aguardar 1 segundo antes de enviar a próxima mensagem
+            # Isso será processado assincronamente por enviar_mensagens_morador
+            
+            # Mensagem principal com os detalhes da visita
+            resident_msg = (f"{visitor_name} está na portaria solicitando {intent_desc}. "
+                           f"Você autoriza a entrada? Responda SIM ou NÃO.")
             session_manager.enfileirar_resident(session_id, resident_msg)
+            
+            # Notificar o visitante que o morador atendeu
             session_manager.enfileirar_visitor(session_id, "O morador atendeu. Aguarde enquanto verificamos sua autorização...")
 
         elif self.state == FlowState.ESPERANDO_MORADOR:
@@ -224,6 +239,11 @@ class ConversationFlow:
                     session_id, 
                     f"Ótima notícia! O morador autorizou sua entrada."
                 )
+                
+                # Salvar resultado da autorização na sessão
+                self.intent_data["authorization_result"] = "authorized"
+                
+                # Atualizar o state e iniciar encerramento
                 self.state = FlowState.FINALIZADO
                 self._finalizar(session_id, session_manager)
                 
@@ -237,6 +257,11 @@ class ConversationFlow:
                     session_id, 
                     "Infelizmente o morador não autorizou sua entrada neste momento."
                 )
+                
+                # Salvar resultado da autorização na sessão
+                self.intent_data["authorization_result"] = "denied"
+                
+                # Atualizar o state e iniciar encerramento
                 self.state = FlowState.FINALIZADO
                 self._finalizar(session_id, session_manager)
                 
