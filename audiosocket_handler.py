@@ -457,7 +457,10 @@ async def iniciar_servidor_audiosocket_visitante(reader, writer):
     kind = header[0]
     length = int.from_bytes(header[1:3], "big")
     call_id_bytes = await reader.readexactly(length)
-    call_id = call_id_bytes.hex()
+    
+    # Converter para UUID com formato de traços
+    import uuid
+    call_id = str(uuid.UUID(bytes=call_id_bytes))
 
     logger.info(f"[VISITANTE] Recebido Call ID: {call_id}")
     
@@ -783,7 +786,10 @@ async def iniciar_servidor_audiosocket_morador(reader, writer):
     kind = header[0]
     length = int.from_bytes(header[1:3], "big")
     call_id_bytes = await reader.readexactly(length)
-    call_id = call_id_bytes.hex()
+    
+    # Converter para UUID com formato de traços
+    import uuid
+    call_id = str(uuid.UUID(bytes=call_id_bytes))
 
     logger.info(f"[MORADOR] Recebido Call ID: {call_id}")
     

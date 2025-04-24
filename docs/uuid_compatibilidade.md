@@ -2,15 +2,24 @@
 
 ## Problema Identificado
 
-Durante o teste de funcionamento das chamadas entre visitantes e moradores, identificamos que as ligações estavam caindo prematuramente ou perdendo o contexto entre as duas partes da conversa. Após análise dos logs, notamos que o principal problema estava relacionado à forma como os identificadores de sessão (UUIDs) eram transmitidos entre os diferentes componentes do sistema.
+Durante o teste de funcionamento das chamadas entre visitantes e moradores, identificamos que as ligações estavam caindo prematuramente ou perdendo o contexto entre as duas partes da conversa. Após análise dos logs, notamos que um problema crítico: o sistema estava convertendo os UUIDs para formato hexadecimal sem traços, o que tornava impossível correlacionar as diferentes partes da chamada.
 
 ## Solução Implementada
 
-Após experimentar diferentes abordagens, decidimos manter a implementação com UUIDs v4 padrão do Python, mas melhoramos o gerenciamento e compartilhamento dos UUIDs:
+Após investigação detalhada, identificamos e corrigimos o problema:
 
-1. **Formato preservado**: Mantemos o formato completo do UUID com traços, pois é necessário para compatibilidade com o AudioSocket
-2. **Reutilização de sessões**: Modificamos o código para garantir que o mesmo UUID seja usado entre a chamada do visitante e do morador
-3. **Verificação de contexto**: Implementamos validações para garantir que o contexto da sessão seja mantido entre os diferentes componentes
+1. **Preservação do formato com traços**: Modificamos o código para manter o formato UUID canônico com traços (`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`), essencial para compatibilidade com AudioSocket
+
+2. **Conversão correta de bytes para UUID**: Alteramos a forma como os bytes recebidos nas conexões são convertidos para UUIDs, garantindo o formato correto:
+   ```python
+   # Antes (problemático):
+   call_id = call_id_bytes.hex()  # Criava string sem traços
+   
+   # Depois (corrigido):
+   call_id = str(uuid.UUID(bytes=call_id_bytes))  # Formato canônico com traços
+   ```
+
+3. **Reutilização de sessões**: Implementamos verificação para garantir que o mesmo UUID seja usado entre chamadas do visitante e do morador
 
 ### Exemplo de UUID compatível
 
@@ -18,17 +27,17 @@ Após experimentar diferentes abordagens, decidimos manter a implementação com
 e69439e9-1489-4bba-b55d-37612b5dffaf
 ```
 
-Este formato com traços e o tamanho padrão garante que o sistema externo de telefonia (AudioSocket) possa manter o contexto da conversa.
+Este formato com traços e o tamanho padrão é essencial para o funcionamento correto do sistema.
 
 ### Arquivos Modificados
 
-1. **session_manager.py**
-   - Melhoria no gerenciamento de sessões com UUIDs
-   - Implementação de log para rastreamento de UUIDs
+1. **audiosocket_handler.py**
+   - Corrigido o método de conversão de bytes para UUID nas funções `iniciar_servidor_audiosocket_visitante` e `iniciar_servidor_audiosocket_morador`
+   - Implementada verificação para reutilização de sessões com mesmo UUID
+   - Adicionados logs detalhados de UUIDs
 
-2. **audiosocket_handler.py**
-   - Adicionada verificação de sessão existente para evitar duplicação
-   - Implementada transferência de contexto entre sessões do visitante e do morador
+2. **session_manager.py**
+   - Melhoria no gerenciamento de sessões para garantir consistência de UUIDs
 
 3. **conversation_flow.py**
    - Melhorado o fluxo de chamadas para manter o contexto entre visitante e morador
