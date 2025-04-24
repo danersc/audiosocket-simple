@@ -112,4 +112,31 @@ if not morador_voip_number:
 - Avaliar a possibilidade de detecção automática de ruído de fundo vs. silêncio real
 - Implementar um mecanismo de recuperação para lidar com situações onde o GUID não é preservado corretamente
 
+## Sumário das Alterações
+
+1. **conversation_flow.py**:
+   - Importado módulo `time` para timestamp da mensagem AMQP
+   - Melhorado `iniciar_processo_chamada` com logging detalhado
+   - Adicionado tratamento de erros no `enviar_clicktocall`
+   - Retorno de status booleano para detecção de falhas
+
+2. **audiosocket_handler.py**:
+   - Adicionado `RESIDENT_MAX_SILENCE_SECONDS` para timeout específico de moradores
+   - Modificado handler de áudio do morador para usar o timeout estendido
+   - Modificado inicializador de servidor para reutilizar sessões existentes
+
+3. **config.json**:
+   - Adicionado `resident_max_silence_seconds` (45 segundos)
+   - Aumentado `max_transaction_time_seconds` de 30 para 60 segundos
+
+4. **main.py**:
+   - Melhorado logging da inicialização dos servidores
+   - Adicionado comentários sobre a importância da preservação do GUID
+
 Data da implementação: 25/04/2025
+
+## Próxima Verificação
+
+- Monitorar logs para garantir que o GUID está sendo preservado
+- Verificar que as chamadas de moradores estão durando o tempo adequado sem quedas prematuras
+- Monitorar se o morador está conseguindo responder às perguntas antes de timeout

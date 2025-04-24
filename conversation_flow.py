@@ -1,6 +1,7 @@
 # conversation_flow.py
 
 import logging
+import time
 from enum import Enum, auto
 from typing import Optional
 
@@ -9,7 +10,7 @@ from ai.tools import validar_intent_com_fuzzy
 
 import pika
 import json
-import asyncio  ### PASSO 2: precisamos de asyncio
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -267,6 +268,10 @@ class ConversationFlow:
         Gerencia o processo completo de chamada ao morador de forma assíncrona,
         sem notificar o visitante sobre cada etapa.
         """
+        # Log detalhado para diagnóstico
+        logger.info(f"[Flow] Iniciando processo de chamada para morador: voip={self.voip_number_morador}, session_id={session_id}")
+        logger.info(f"[Flow] Dados do intent: {self.intent_data}")
+        
         if not self.voip_number_morador:
             logger.warning("[Flow] voip_number_morador está vazio, não posso discar.")
             session_manager.enfileirar_visitor(
