@@ -8,7 +8,7 @@ O sistema estava utilizando UUIDs v4 padrão, que são completamente aleatórios
 
 ## Solução Implementada
 
-Migramos todo o sistema para utilizar UUIDs v7, que oferecem as seguintes vantagens:
+Implementamos um gerador próprio de UUIDs v7, que oferecem as seguintes vantagens:
 
 1. **Baseados em timestamp**: Incluem o timestamp atual em milissegundos, garantindo ordenação cronológica
 2. **Compatibilidade melhorada**: Funcionam melhor com sistemas de banco de dados e middlewares que esperam ordenação
@@ -17,29 +17,29 @@ Migramos todo o sistema para utilizar UUIDs v7, que oferecem as seguintes vantag
 
 ### Arquivos Modificados
 
-1. **session_manager.py**
-   - Substituído `from uuid import uuid4` por `from uuid_v7 import uuid_v7`
-   - Atualizado gerador de IDs de sessão para usar `uuid_v7()`
-   - Adicionado logging da geração de novos UUIDs
+1. **utils/uuid_generator.py** (NOVO)
+   - Implementação própria de UUIDs v7 sem dependências externas
+   - Segue a especificação oficial do RFC em desenvolvimento
 
-2. **state_machine.py** 
-   - Atualizado `start_new_conversation()` para usar `uuid_v7()`
+2. **session_manager.py**
+   - Substituído `from uuid import uuid4` por `from utils.uuid_generator import uuid7`
+   - Atualizado gerador de IDs de sessão para usar `uuid7()`
+   - Adicionado logging melhorado
+
+3. **state_machine.py** 
+   - Atualizado `start_new_conversation()` para usar `uuid7()`
    - Melhorado log das conversações para facilitar rastreabilidade
 
-3. **microfone_client.py**
+4. **microfone_client.py**
    - Modificado para usar UUIDs v7 para IDs de chamada
    - Atualizado logging para destacar uso de UUIDs v7
 
-4. **test_logs.py**
+5. **test_logs.py**
    - Migrado código de simulação para utilizar UUIDs v7
 
-### Requisitos Adicionados
-
-Foi adicionada a dependência `uuid-v7` ao projeto:
-
-```
-pip install uuid-v7
-```
+6. **audiosocket_handler.py**
+   - Implementada verificação de sessão existente antes de criar nova
+   - Adicionada transferência de contexto entre sessões
 
 ## Benefícios
 
@@ -64,7 +64,7 @@ pip install uuid-v7
 ## Próximos Passos
 
 1. Monitorar o funcionamento das chamadas e verificar se o problema de queda prematura foi resolvido
-2. Considerar migração para UUIDs v7 em outros componentes do sistema, se necessário
-3. Avaliar a adição de UUIDs v7 como parte do protocolo de comunicação com sistemas externos
+2. Avaliar a performance e a distribuição dos UUIDs v7 em comparação com UUIDs v4
+3. Considerar adicionar uma API para extrair o timestamp de um UUID v7, facilitando o diagnóstico
 
 Data da implementação: 25/04/2025
