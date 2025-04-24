@@ -1,6 +1,6 @@
 import os
 
-IGNORE = {'__pycache__', '.env', '.git', '.idea', 'audio'}
+IGNORE = {'__pycache__', '.env', '.git', '.idea', 'audio', "*.md", "logs"}
 
 def list_structure(base_path, prefix=""):
     tree = ""

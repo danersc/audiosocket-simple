@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-import socket, struct, threading, pyaudio, logging, uuid
+import socket, struct, threading, pyaudio, logging, uuid, time
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 
 KIND_ID, KIND_SLIN, KIND_HANGUP = 0x01, 0x10, 0x00
 
 class AudioSocketClient:
-    def __init__(self, host='18.231.197.181', port=8080):
+    def __init__(self, host='127.0.0.1', port=8080):  # Mudando para localhost
         self.host, self.port = host, port
         self.call_id = uuid.uuid4().bytes
         self.sample_rate, self.channels, self.chunk_size = 8000, 1, 320
@@ -15,12 +15,25 @@ class AudioSocketClient:
 
     def connect(self):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        logging.info(f"Tentando conectar a {self.host}:{self.port}...")
         self.socket.connect((self.host, self.port))
+        
+        # Enviar ID da chamada
+        call_uuid = uuid.UUID(bytes=self.call_id)
+        logging.info(f"Enviando ID da chamada: {call_uuid}")
         self.socket.sendall(struct.pack('>B H', KIND_ID, len(self.call_id)) + self.call_id)
-        logging.info("Conectado ao servidor.")
+        
+        logging.info("Conectado ao servidor! Iniciando transmissão de áudio...")
         self.running = True
-        threading.Thread(target=self.send_audio).start()
-        threading.Thread(target=self.receive_audio).start()
+        
+        # Iniciar threads para envio e recebimento de áudio
+        self.send_thread = threading.Thread(target=self.send_audio, name="SendAudio")
+        self.send_thread.daemon = True
+        self.send_thread.start()
+        
+        self.receive_thread = threading.Thread(target=self.receive_audio, name="ReceiveAudio")
+        self.receive_thread.daemon = True
+        self.receive_thread.start()
 
     def send_audio(self):
         p = pyaudio.PyAudio()
@@ -39,31 +52,92 @@ class AudioSocketClient:
     def receive_audio(self):
         p = pyaudio.PyAudio()
         stream = p.open(format=self.format, channels=self.channels, rate=self.sample_rate, output=True)
+        last_audio_time = 0
+        audio_count = 0
         try:
             while self.running:
                 header = self.socket.recv(3)
-                if not header: break
+                if not header: 
+                    logging.warning("Recebido header vazio, encerrando conexão...")
+                    break
+                    
                 kind, length = header[0], struct.unpack('>H', header[1:3])[0]
                 payload = self.socket.recv(length)
+                
                 if kind == KIND_SLIN:
                     stream.write(payload)
+                    audio_count += 1
+                    
+                    # A cada 50 pacotes de áudio, mostramos um indicador
+                    if audio_count % 50 == 0:
+                        current_time = time.time()
+                        if last_audio_time > 0:
+                            rate = 50 / (current_time - last_audio_time)
+                            logging.info(f"Recebendo áudio: {rate:.1f} pacotes/s")
+                        last_audio_time = current_time
+                else:
+                    logging.debug(f"Recebido pacote não-SLIN: kind={kind}, length={length}")
+                    
+        except ConnectionResetError:
+            logging.error("Conexão fechada pelo servidor")
+            self.running = False
         except Exception as e:
             logging.error(f"Erro no recebimento de áudio: {e}")
             self.running = False
+            
+        logging.info("Thread de recebimento encerrada")
         stream.stop_stream()
         stream.close()
         p.terminate()
 
     def disconnect(self):
         self.running = False
-        self.socket.sendall(struct.pack('>B H', KIND_HANGUP, 0))
-        self.socket.close()
-        logging.info("Desconectado do servidor.")
+        try:
+            # Verificar se o socket está conectado antes de tentar enviar dados
+            if hasattr(self, 'socket') and self.socket:
+                try:
+                    self.socket.sendall(struct.pack('>B H', KIND_HANGUP, 0))
+                except (OSError, BrokenPipeError) as e:
+                    logging.warning(f"Não foi possível enviar comando de hangup: {e}")
+                
+                try:
+                    self.socket.close()
+                except Exception as e:
+                    logging.warning(f"Erro ao fechar socket: {e}")
+                    
+            logging.info("Desconectado do servidor.")
+        except Exception as e:
+            logging.error(f"Erro durante a desconexão: {e}")
 
 if __name__ == "__main__":
-    client = AudioSocketClient()
+    import argparse
+    
+    # Adicionar opções de linha de comando
+    parser = argparse.ArgumentParser(description='Cliente de microfone para AudioSocket')
+    parser.add_argument('--host', default='127.0.0.1', help='Endereço do servidor (padrão: 127.0.0.1)')
+    parser.add_argument('--port', type=int, default=8080, help='Porta do servidor (padrão: 8080)')
+    args = parser.parse_args()
+    
+    # Usar os valores fornecidos pelo usuário ou os padrões
+    logging.info(f"Conectando ao servidor {args.host}:{args.port}")
+    client = AudioSocketClient(host=args.host, port=args.port)
+    
     try:
         client.connect()
-        while client.running: pass
+        logging.info("Pressione Ctrl+C para encerrar")
+        
+        # Loop para manter o programa em execução
+        while client.running:
+            import time
+            time.sleep(0.1)  # Pequeno delay para não consumir CPU
+            
     except KeyboardInterrupt:
-        client.disconnect()
+        logging.info("Encerrando conexão...")
+    except ConnectionRefusedError:
+        logging.error(f"Não foi possível conectar ao servidor {args.host}:{args.port}")
+        logging.error("Verifique se o servidor está em execução")
+    except Exception as e:
+        logging.error(f"Erro: {e}")
+    finally:
+        if client.running:
+            client.disconnect()

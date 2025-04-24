@@ -71,19 +71,43 @@ def extract_intent_from_response(response: str) -> Dict:
 
         return result.model_dump()
     except Exception as e:
-        try:
-            message_of_non_understanding = json.loads(message)
-        except:
-            message_of_non_understanding = {
-                "mensagem": "Não foi possível identificar sua intenção e seu nome, por favor, me informe seu nome e o que deseja.",
-                "dados": {
-                    "intent_type": "",
-                    "interlocutor_name": "",
-                    "apartment_number": "",
-                    "resident_name": "",
-                    "set_call_status": "USER_TURN"
-                }
-            }
-        message_of_non_understanding['dados']['intent_type'] = IntentType.DESCONHECIDO
-        message_of_non_understanding['valid_for_action'] = False
+        # Log do erro para diagnóstico (idealmente seria para um sistema de log)
+        print(f"Erro ao extrair intenção: {str(e)}")
+        
+        # Tenta entender se a mensagem já é um JSON
+        if isinstance(response, str) and response.strip().startswith('{') and response.strip().endswith('}'):
+            try:
+                # Tenta extrair JSON diretamente da resposta
+                message_of_non_understanding = json.loads(response)
+                if "mensagem" in message_of_non_understanding and "dados" in message_of_non_understanding:
+                    # Garante que todos os campos necessários estejam presentes
+                    if "intent_type" not in message_of_non_understanding["dados"]:
+                        message_of_non_understanding["dados"]["intent_type"] = "desconhecido"
+                    if "interlocutor_name" not in message_of_non_understanding["dados"]:
+                        message_of_non_understanding["dados"]["interlocutor_name"] = ""
+                    if "apartment_number" not in message_of_non_understanding["dados"]:
+                        message_of_non_understanding["dados"]["apartment_number"] = ""
+                    if "resident_name" not in message_of_non_understanding["dados"]:
+                        message_of_non_understanding["dados"]["resident_name"] = ""
+                    
+                    message_of_non_understanding["valid_for_action"] = False
+                    message_of_non_understanding["set_call_status"] = "USER_TURN"
+                    return message_of_non_understanding
+            except:
+                # Se falhar na análise JSON, continua para a resposta padrão
+                pass
+                
+        # Resposta padrão para casos de erro
+        message_of_non_understanding = {
+            "mensagem": "Desculpe, não consegui entender. Por favor, informe novamente o que deseja.",
+            "dados": {
+                "intent_type": "desconhecido",
+                "interlocutor_name": "",
+                "apartment_number": "",
+                "resident_name": ""
+            },
+            "valid_for_action": False,
+            "set_call_status": "USER_TURN"
+        }
+        
         return message_of_non_understanding

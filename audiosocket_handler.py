@@ -4,11 +4,13 @@ import asyncio
 import logging
 import struct
 import os
+import time
 
 import webrtcvad
 
 from speech_service import transcrever_audio_async, sintetizar_fala_async
 from session_manager import SessionManager  # Importamos o SessionManager
+from utils.call_logger import CallLoggerManager  # Importamos o CallLoggerManager
 
 # Caso você use um "StateMachine" separado, pode remover ou adaptar:
 # from state_machine import State
@@ -23,11 +25,22 @@ KIND_SLIN = 0x10
 session_manager = SessionManager()
 
 
-async def enviar_audio(writer: asyncio.StreamWriter, dados_audio: bytes, origem="desconhecida"):
+async def enviar_audio(writer: asyncio.StreamWriter, dados_audio: bytes, call_id: str = None, origem="desconhecida"):
     """
     Envia dados de áudio (SLIN) ao cliente via 'writer'.
     """
     logger.info(f"[{origem}] Enviando áudio de {len(dados_audio)} bytes.")
+    
+    # Registrar no log específico da chamada
+    if call_id:
+        is_visitor = (origem == "Visitante")
+        call_logger = CallLoggerManager.get_logger(call_id)
+        call_logger.log_event("AUDIO_SEND_START", {
+            "target": "visitor" if is_visitor else "resident",
+            "audio_size_bytes": len(dados_audio)
+        })
+    
+    start_time = time.time()
     chunk_size = 320
     for i in range(0, len(dados_audio), chunk_size):
         chunk = dados_audio[i : i + chunk_size]
@@ -36,41 +49,98 @@ async def enviar_audio(writer: asyncio.StreamWriter, dados_audio: bytes, origem=
         await writer.drain()
         # Pequeno atraso para não encher o buffer do lado do Asterisk
         await asyncio.sleep(0.02)
+    
+    # Registrar conclusão
+    if call_id:
+        duration_ms = (time.time() - start_time) * 1000
+        call_logger.log_event("AUDIO_SEND_COMPLETE", {
+            "target": "visitor" if is_visitor else "resident",
+            "duration_ms": round(duration_ms, 2)
+        })
 
 
 async def receber_audio_visitante(reader: asyncio.StreamReader, call_id: str):
     """
     Tarefa que fica lendo o áudio do visitante, detecta quando ele fala (usando VAD)
     e chama `session_manager.process_visitor_text(...)` ao fim de cada frase.
+    
+    Agora com controle de estado para evitar retroalimentação durante a fala da IA.
     """
+    call_logger = CallLoggerManager.get_logger(call_id)
     vad = webrtcvad.Vad(2)  # Agressivo 0-3
     frames = []
     is_speaking = False
     silence_start = None
-
+    speech_start = None
+    
+    # Para controlar se estamos no modo de escuta ativa
+    is_listening_mode = True
+    
+    # Acessar a sessão para verificar o estado
+    session = session_manager.get_session(call_id)
+    if not session:
+        logger.error(f"[{call_id}] Sessão não encontrada para iniciar recebimento de áudio")
+        return
+    
+    # Flag de buffer para descartar áudio residual após IA falar
+    discard_buffer_frames = 0
+    
     while True:
         try:
             header = await reader.readexactly(3)
         except asyncio.IncompleteReadError:
             logger.info(f"[{call_id}] Visitante desconectou (EOF).")
+            call_logger.log_call_ended("visitor_disconnected")
             break
 
         if not header:
             logger.info(f"[{call_id}] Nenhum dado de header, encerrando.")
+            call_logger.log_call_ended("invalid_header")
             break
 
         kind = header[0]
         length = int.from_bytes(header[1:3], "big")
 
         audio_chunk = await reader.readexactly(length)
-        if kind == KIND_SLIN and len(audio_chunk) == 320:
+        
+        # Verificar o estado atual da sessão
+        current_state = session.visitor_state
+        
+        # Se estamos em IA_TURN, significa que a IA está falando - não devemos processar VAD
+        if current_state == "IA_TURN":
+            is_listening_mode = False
+            continue  # Pula processamento durante fala da IA
+            
+        # Período de transição: após IA falar, descartamos alguns frames para evitar eco
+        if discard_buffer_frames > 0:
+            discard_buffer_frames -= 1
+            continue
+            
+        # Se acabamos de transitar de IA_TURN para USER_TURN, ativamos modo de escuta e descartamos frames iniciais
+        if not is_listening_mode and current_state == "USER_TURN":
+            is_listening_mode = True
+            discard_buffer_frames = 25  # ~0.5s de áudio para descartar possível eco
+            logger.debug(f"[{call_id}] Ativando modo de escuta de visitante")
+            call_logger.log_event("LISTENING_MODE_ACTIVATED", {"timestamp": time.time()})
+            
+            # Limpar quaisquer frames acumulados anteriormente
+            frames = []
+            is_speaking = False
+            silence_start = None
+            speech_start = None
+            continue
+
+        # Processamos VAD apenas quando estamos em modo de escuta
+        if is_listening_mode and kind == KIND_SLIN and len(audio_chunk) == 320:
             # Avalia VAD
             is_voice = vad.is_speech(audio_chunk, 8000)
             if is_voice:
                 frames.append(audio_chunk)
                 if not is_speaking:
                     is_speaking = True
+                    speech_start = asyncio.get_event_loop().time()
                     logger.debug(f"[{call_id}] Visitante começou a falar.")
+                    call_logger.log_speech_detected(is_visitor=True)
                 silence_start = None
             else:
                 if is_speaking:
@@ -79,18 +149,65 @@ async def receber_audio_visitante(reader: asyncio.StreamReader, call_id: str):
                         silence_start = asyncio.get_event_loop().time()
                     else:
                         # Se passou 2s em silêncio, considera que a fala terminou
-                        if (asyncio.get_event_loop().time() - silence_start) > 2.0:
+                        silence_duration = asyncio.get_event_loop().time() - silence_start
+                        if silence_duration > 2.0:
                             is_speaking = False
-                            logger.debug(f"[{call_id}] Visitante parou de falar.")
+                            
+                            # Se não temos frames suficientes (< 1s), provavelmente é ruído
+                            if len(frames) < 50:  # ~1 segundo de áudio (50 frames de 20ms)
+                                logger.debug(f"[{call_id}] Descartando fala curta demais ({len(frames)} frames)")
+                                frames = []
+                                continue
+                            
+                            # Calcular duração total da fala
+                            speech_duration = (asyncio.get_event_loop().time() - speech_start) * 1000
+                            logger.debug(f"[{call_id}] Visitante parou de falar após {speech_duration:.0f}ms.")
+                            call_logger.log_speech_ended(speech_duration, is_visitor=True)
+                            call_logger.log_silence_detected(silence_duration * 1000, is_visitor=True)
+                            
                             audio_data = b"".join(frames)
                             frames.clear()
 
-                            # Transcrever
+                            # Desativar escuta durante processamento para evitar retroalimentação
+                            is_listening_mode = False
+                            
+                            # Log antes da transcrição
+                            call_logger.log_transcription_start(len(audio_data), is_visitor=True)
+                            
+                            # Mudar estado para WAITING durante processamento
+                            session.visitor_state = "WAITING"
+                            
+                            # Transcrever com medição de tempo
+                            start_time = time.time()
                             texto = await transcrever_audio_async(audio_data)
+                            transcription_time = (time.time() - start_time) * 1000
+                            
                             if texto:
+                                call_logger.log_transcription_complete(texto, transcription_time, is_visitor=True)
+                                
+                                # Medição do tempo de processamento da IA
+                                start_time = time.time()
                                 session_manager.process_visitor_text(call_id, texto)
-        else:
+                                ai_processing_time = (time.time() - start_time) * 1000
+                                
+                                call_logger.log_event("VISITOR_PROCESSING_COMPLETE", {
+                                    "text": texto,
+                                    "processing_time_ms": round(ai_processing_time, 2)
+                                })
+                                
+                                # Agora, mesmo que o estado tenha mudado para IA_TURN durante o processamento,
+                                # vamos respeitar isso (is_listening_mode já está False)
+                            else:
+                                call_logger.log_error("TRANSCRIPTION_FAILED", 
+                                                    "Falha ao transcrever áudio do visitante", 
+                                                    {"audio_size": len(audio_data)})
+                                # Voltar ao modo de escuta, já que não conseguimos processar o áudio
+                                is_listening_mode = True
+        elif kind != KIND_SLIN or len(audio_chunk) != 320:
             logger.warning(f"[{call_id}] Chunk inválido do visitante. kind={kind}, len={len(audio_chunk)}")
+            call_logger.log_error("INVALID_CHUNK", 
+                                "Chunk de áudio inválido recebido do visitante", 
+                                {"kind": kind, "length": len(audio_chunk)})
 
     # Ao sair, encerrou a conexão
     logger.info(f"[{call_id}] receber_audio_visitante terminou.")
@@ -100,7 +217,17 @@ async def enviar_mensagens_visitante(writer: asyncio.StreamWriter, call_id: str)
     """
     Tarefa que periodicamente verifica se há mensagens pendentes
     para o visitante no SessionManager, sintetiza e envia via áudio.
+    
+    Atualiza o estado da sessão durante a fala da IA para evitar retroalimentação.
     """
+    call_logger = CallLoggerManager.get_logger(call_id)
+    
+    # Verificar se a sessão existe
+    session = session_manager.get_session(call_id)
+    if not session:
+        logger.error(f"[{call_id}] Sessão não encontrada para enviar mensagens")
+        return
+    
     while True:
         await asyncio.sleep(0.2)  # Ajuste conforme sua necessidade
 
@@ -108,9 +235,68 @@ async def enviar_mensagens_visitante(writer: asyncio.StreamWriter, call_id: str)
         msg = session_manager.get_message_for_visitor(call_id)
         if msg is not None:
             logger.info(f"[{call_id}] Enviando mensagem ao visitante: {msg}")
+            
+            # IMPORTANTE: Mudar estado para IA_TURN antes de começar a falar
+            # Isso sinaliza para o VAD parar de processar durante a fala
+            old_state = session.visitor_state
+            session.visitor_state = "IA_TURN"
+            
+            call_logger.log_event("STATE_CHANGE", {
+                "from": old_state,
+                "to": "IA_TURN",
+                "reason": "ia_speaking"
+            })
+            
+            call_logger.log_synthesis_start(msg, is_visitor=True)
+            
+            # Medir tempo de síntese
+            start_time = time.time()
             audio_resposta = await sintetizar_fala_async(msg)
-            if audio_resposta:
-                await enviar_audio(writer, audio_resposta, origem="Visitante")
+            synthesis_time = (time.time() - start_time) * 1000
+            
+            # Se falhou na síntese, voltamos ao estado anterior
+            if not audio_resposta:
+                call_logger.log_error("SYNTHESIS_FAILED", 
+                                     "Falha ao sintetizar mensagem para o visitante", 
+                                     {"message": msg})
+                
+                # Voltar ao estado anterior
+                session.visitor_state = old_state
+                call_logger.log_event("STATE_CHANGE", {
+                    "from": "IA_TURN",
+                    "to": old_state,
+                    "reason": "synthesis_failed"
+                })
+                continue
+                
+            # Síntese bem-sucedida, enviar áudio
+            call_logger.log_synthesis_complete(len(audio_resposta), synthesis_time, is_visitor=True)
+            
+            # Tempo estimado para reprodução (baseado no tamanho do áudio)
+            # A taxa de amostragem é 8000Hz com 16 bits por amostra
+            # Aproximadamente (len(audio_resposta) / 16000) segundos de áudio
+            playback_duration_ms = (len(audio_resposta) / 16) * 1000
+            call_logger.log_event("ESTIMATED_PLAYBACK_DURATION", {
+                "duration_ms": playback_duration_ms,
+                "audio_size_bytes": len(audio_resposta)
+            })
+            
+            # Enviar o áudio (isso já registra logs de envio)
+            await enviar_audio(writer, audio_resposta, call_id=call_id, origem="Visitante")
+            
+            # Adicionar um pequeno atraso após o envio do áudio para garantir
+            # que o áudio seja totalmente reproduzido antes de voltar a escutar
+            # Os 0.5s adicionais são para criar um buffer de segurança
+            post_audio_delay = 0.5
+            await asyncio.sleep(post_audio_delay)
+            
+            # Mudar de volta para USER_TURN para que o sistema possa escutar o usuário
+            session.visitor_state = "USER_TURN"
+            call_logger.log_event("STATE_CHANGE", {
+                "from": "IA_TURN",
+                "to": "USER_TURN",
+                "reason": "ia_finished_speaking"
+            })
 
 
 async def iniciar_servidor_audiosocket_visitante(reader, writer):
@@ -121,21 +307,39 @@ async def iniciar_servidor_audiosocket_visitante(reader, writer):
     call_id = call_id_bytes.hex()
 
     logger.info(f"[VISITANTE] Recebido Call ID: {call_id}")
+    
+    # Inicializar logger específico para esta chamada
+    call_logger = CallLoggerManager.get_logger(call_id)
+    call_logger.log_event("CALL_SETUP", {
+        "type": "visitor",
+        "call_id": call_id
+    })
 
     session_manager.create_session(call_id)
 
     # SAUDAÇÃO:
+    welcome_msg = "Olá, seja bem-vindo! Em que posso ajudar?"
+    call_logger.log_event("GREETING", {"message": welcome_msg})
+    
     session_manager.enfileirar_visitor(
         call_id,
-        "Olá, seja bem-vindo! Em que posso ajudar?"
+        welcome_msg
     )
 
     task1 = asyncio.create_task(receber_audio_visitante(reader, call_id))
     task2 = asyncio.create_task(enviar_mensagens_visitante(writer, call_id))
 
     # Espera até que alguma das tarefas termine (em geral, quando visitante desconecta).
+    start_time = time.time()
     done, pending = await asyncio.wait([task1, task2], return_when=asyncio.FIRST_COMPLETED)
+    call_duration = (time.time() - start_time) * 1000
+    
     logger.info(f"[{call_id}] Alguma tarefa finalizou, vamos encerrar as duas...")
+    call_logger.log_event("TASKS_ENDING", {
+        "done_tasks": len(done),
+        "pending_tasks": len(pending),
+        "call_duration_ms": round(call_duration, 2)
+    })
 
     # Cancela a outra
     for t in pending:
@@ -143,6 +347,11 @@ async def iniciar_servidor_audiosocket_visitante(reader, writer):
     await asyncio.gather(*pending, return_exceptions=True)
 
     logger.info(f"[{call_id}] Encerrando conexão do visitante.")
+    call_logger.log_call_ended("visitor_connection_closed", call_duration)
+    
+    # Remover logger para liberar recursos
+    CallLoggerManager.remove_logger(call_id)
+    
     writer.close()
     await writer.wait_closed()
 
@@ -153,52 +362,146 @@ async def iniciar_servidor_audiosocket_visitante(reader, writer):
 
 async def receber_audio_morador(reader: asyncio.StreamReader, call_id: str):
     """
-    Versão equivalente para o morador
+    Versão equivalente para o morador, com controle de estado para evitar retroalimentação.
     """
+    call_logger = CallLoggerManager.get_logger(call_id)
     vad = webrtcvad.Vad(2)
     frames = []
     is_speaking = False
     silence_start = None
+    speech_start = None
+    
+    # Para controlar se estamos no modo de escuta ativa
+    is_listening_mode = True
+    
+    # Acessar a sessão para verificar o estado
+    session = session_manager.get_session(call_id)
+    if not session:
+        logger.error(f"[{call_id}] Sessão não encontrada para iniciar recebimento de áudio do morador")
+        return
+    
+    # Flag de buffer para descartar áudio residual após IA falar
+    discard_buffer_frames = 0
 
     while True:
         try:
             header = await reader.readexactly(3)
         except asyncio.IncompleteReadError:
             logger.info(f"[{call_id}] Morador desconectou (EOF).")
+            call_logger.log_call_ended("resident_disconnected")
             break
 
         if not header:
             logger.info(f"[{call_id}] Nenhum dado de header, encerrando (morador).")
+            call_logger.log_call_ended("invalid_header_resident")
             break
 
         kind = header[0]
         length = int.from_bytes(header[1:3], "big")
 
         audio_chunk = await reader.readexactly(length)
-        if kind == KIND_SLIN and len(audio_chunk) == 320:
+        
+        # Verificar o estado atual da sessão
+        current_state = session.resident_state
+        
+        # Se estamos em IA_TURN, significa que a IA está falando com o morador - não processamos
+        if current_state == "IA_TURN":
+            is_listening_mode = False
+            continue  # Pula processamento durante fala da IA
+            
+        # Período de transição: após IA falar, descartamos alguns frames para evitar eco
+        if discard_buffer_frames > 0:
+            discard_buffer_frames -= 1
+            continue
+            
+        # Se acabamos de transitar de IA_TURN para USER_TURN, ativamos modo de escuta
+        if not is_listening_mode and current_state == "USER_TURN":
+            is_listening_mode = True
+            discard_buffer_frames = 25  # ~0.5s de áudio para descartar possível eco
+            logger.debug(f"[{call_id}] Ativando modo de escuta de morador")
+            call_logger.log_event("RESIDENT_LISTENING_MODE_ACTIVATED", {"timestamp": time.time()})
+            
+            # Limpar quaisquer frames acumulados anteriormente
+            frames = []
+            is_speaking = False
+            silence_start = None
+            speech_start = None
+            continue
+        
+        # Processamos VAD apenas quando estamos em modo de escuta
+        if is_listening_mode and kind == KIND_SLIN and len(audio_chunk) == 320:
             is_voice = vad.is_speech(audio_chunk, 8000)
             if is_voice:
                 frames.append(audio_chunk)
                 if not is_speaking:
                     is_speaking = True
+                    speech_start = asyncio.get_event_loop().time()
                     logger.debug(f"[{call_id}] Morador começou a falar.")
+                    call_logger.log_speech_detected(is_visitor=False)
                 silence_start = None
             else:
                 if is_speaking:
                     if silence_start is None:
                         silence_start = asyncio.get_event_loop().time()
                     else:
-                        if (asyncio.get_event_loop().time() - silence_start) > 2.0:
+                        silence_duration = asyncio.get_event_loop().time() - silence_start
+                        if silence_duration > 2.0:
                             is_speaking = False
-                            logger.debug(f"[{call_id}] Morador parou de falar.")
+                            
+                            # Se não temos frames suficientes (< 1s), provavelmente é ruído
+                            if len(frames) < 50:  # ~1 segundo de áudio (50 frames de 20ms)
+                                logger.debug(f"[{call_id}] Descartando fala curta demais do morador ({len(frames)} frames)")
+                                frames = []
+                                continue
+                            
+                            # Calcular duração total da fala
+                            speech_duration = (asyncio.get_event_loop().time() - speech_start) * 1000
+                            logger.debug(f"[{call_id}] Morador parou de falar após {speech_duration:.0f}ms.")
+                            call_logger.log_speech_ended(speech_duration, is_visitor=False)
+                            call_logger.log_silence_detected(silence_duration * 1000, is_visitor=False)
+                            
                             audio_data = b"".join(frames)
                             frames.clear()
+                            
+                            # Desativar escuta durante processamento
+                            is_listening_mode = False
 
+                            # Log antes da transcrição
+                            call_logger.log_transcription_start(len(audio_data), is_visitor=False)
+                            
+                            # Mudar estado para WAITING durante processamento
+                            session.resident_state = "WAITING"
+                            
+                            # Transcrever com medição de tempo
+                            start_time = time.time()
                             texto = await transcrever_audio_async(audio_data)
+                            transcription_time = (time.time() - start_time) * 1000
+                            
                             if texto:
+                                call_logger.log_transcription_complete(texto, transcription_time, is_visitor=False)
+                                
+                                # Medição do tempo de processamento
+                                start_time = time.time()
                                 session_manager.process_resident_text(call_id, texto)
-        else:
+                                processing_time = (time.time() - start_time) * 1000
+                                
+                                call_logger.log_event("RESIDENT_PROCESSING_COMPLETE", {
+                                    "text": texto,
+                                    "processing_time_ms": round(processing_time, 2)
+                                })
+                                
+                                # O estado pode ser atualizado pelo processamento
+                            else:
+                                call_logger.log_error("TRANSCRIPTION_FAILED", 
+                                                    "Falha ao transcrever áudio do morador", 
+                                                    {"audio_size": len(audio_data)})
+                                # Voltar ao modo de escuta, já que não foi possível processar
+                                is_listening_mode = True
+        elif kind != KIND_SLIN or len(audio_chunk) != 320:
             logger.warning(f"[{call_id}] Chunk inválido do morador. kind={kind}, len={len(audio_chunk)}")
+            call_logger.log_error("INVALID_CHUNK", 
+                                "Chunk de áudio inválido recebido do morador", 
+                                {"kind": kind, "length": len(audio_chunk)})
 
     logger.info(f"[{call_id}] receber_audio_morador terminou.")
 
@@ -206,15 +509,84 @@ async def receber_audio_morador(reader: asyncio.StreamReader, call_id: str):
 async def enviar_mensagens_morador(writer: asyncio.StreamWriter, call_id: str):
     """
     Fica buscando mensagens para o morador, sintetiza e envia via áudio.
+    
+    Atualiza o estado da sessão durante a fala da IA para evitar retroalimentação.
     """
+    call_logger = CallLoggerManager.get_logger(call_id)
+    
+    # Verificar se a sessão existe
+    session = session_manager.get_session(call_id)
+    if not session:
+        logger.error(f"[{call_id}] Sessão não encontrada para enviar mensagens ao morador")
+        return
+    
     while True:
         await asyncio.sleep(0.2)
         msg = session_manager.get_message_for_resident(call_id)
         if msg is not None:
             logger.info(f"[{call_id}] Enviando mensagem ao morador: {msg}")
+            
+            # IMPORTANTE: Mudar estado para IA_TURN antes de começar a falar
+            # Isso sinaliza para o VAD parar de processar durante a fala
+            old_state = session.resident_state
+            session.resident_state = "IA_TURN"
+            
+            call_logger.log_event("RESIDENT_STATE_CHANGE", {
+                "from": old_state,
+                "to": "IA_TURN",
+                "reason": "ia_speaking_to_resident"
+            })
+            
+            call_logger.log_synthesis_start(msg, is_visitor=False)
+            
+            # Medir tempo de síntese
+            start_time = time.time()
             audio_resposta = await sintetizar_fala_async(msg)
-            if audio_resposta:
-                await enviar_audio(writer, audio_resposta, origem="Morador")
+            synthesis_time = (time.time() - start_time) * 1000
+            
+            # Se falhou na síntese, voltamos ao estado anterior
+            if not audio_resposta:
+                call_logger.log_error("SYNTHESIS_FAILED", 
+                                     "Falha ao sintetizar mensagem para o morador", 
+                                     {"message": msg})
+                
+                # Voltar ao estado anterior
+                session.resident_state = old_state
+                call_logger.log_event("RESIDENT_STATE_CHANGE", {
+                    "from": "IA_TURN",
+                    "to": old_state,
+                    "reason": "synthesis_failed"
+                })
+                continue
+                
+            # Síntese bem-sucedida, enviar áudio
+            call_logger.log_synthesis_complete(len(audio_resposta), synthesis_time, is_visitor=False)
+            
+            # Tempo estimado para reprodução (baseado no tamanho do áudio)
+            # A taxa de amostragem é 8000Hz com 16 bits por amostra
+            # Aproximadamente (len(audio_resposta) / 16000) segundos de áudio
+            playback_duration_ms = (len(audio_resposta) / 16) * 1000
+            call_logger.log_event("RESIDENT_ESTIMATED_PLAYBACK_DURATION", {
+                "duration_ms": playback_duration_ms,
+                "audio_size_bytes": len(audio_resposta)
+            })
+            
+            # Enviar o áudio (isso já registra logs de envio)
+            await enviar_audio(writer, audio_resposta, call_id=call_id, origem="Morador")
+            
+            # Adicionar um pequeno atraso após o envio do áudio para garantir
+            # que o áudio seja totalmente reproduzido antes de voltar a escutar
+            # Os 0.5s adicionais são para criar um buffer de segurança
+            post_audio_delay = 0.5
+            await asyncio.sleep(post_audio_delay)
+            
+            # Mudar de volta para USER_TURN para que o sistema possa escutar o morador
+            session.resident_state = "USER_TURN"
+            call_logger.log_event("RESIDENT_STATE_CHANGE", {
+                "from": "IA_TURN",
+                "to": "USER_TURN",
+                "reason": "ia_finished_speaking_to_resident"
+            })
 
 
 async def iniciar_servidor_audiosocket_morador(reader, writer):
@@ -225,20 +597,38 @@ async def iniciar_servidor_audiosocket_morador(reader, writer):
     call_id = call_id_bytes.hex()
 
     logger.info(f"[MORADOR] Recebido Call ID: {call_id}")
+    
+    # Inicializar logger específico para esta chamada
+    call_logger = CallLoggerManager.get_logger(call_id)
+    call_logger.log_event("CALL_SETUP", {
+        "type": "resident",
+        "call_id": call_id
+    })
 
     session_manager.create_session(call_id)
 
     # SAUDAÇÃO MORADOR:
+    welcome_msg = "Olá, morador! Você está em ligação com a portaria inteligente."
+    call_logger.log_event("GREETING_RESIDENT", {"message": welcome_msg})
+    
     session_manager.enfileirar_resident(
         call_id,
-        "Olá, morador! Você está em ligação com a portaria inteligente."
+        welcome_msg
     )
 
     task1 = asyncio.create_task(receber_audio_morador(reader, call_id))
     task2 = asyncio.create_task(enviar_mensagens_morador(writer, call_id))
 
+    start_time = time.time()
     done, pending = await asyncio.wait([task1, task2], return_when=asyncio.FIRST_COMPLETED)
+    call_duration = (time.time() - start_time) * 1000
+    
     logger.info(f"[{call_id}] Alguma tarefa (morador) finalizou, encerrar.")
+    call_logger.log_event("RESIDENT_TASKS_ENDING", {
+        "done_tasks": len(done),
+        "pending_tasks": len(pending),
+        "call_duration_ms": round(call_duration, 2)
+    })
 
     for t in pending:
         t.cancel()
@@ -246,4 +636,9 @@ async def iniciar_servidor_audiosocket_morador(reader, writer):
 
     writer.close()
     await writer.wait_closed()
+    
     logger.info(f"[{call_id}] Conexão do morador encerrada.")
+    call_logger.log_call_ended("resident_connection_closed", call_duration)
+    
+    # Remover logger para liberar recursos
+    CallLoggerManager.remove_logger(call_id)

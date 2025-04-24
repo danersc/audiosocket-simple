@@ -41,42 +41,97 @@ class ConversationFlow:
         logger.debug(f"[Flow] Visitor message in state={self.state}, text='{text}'")
 
         if self.state == FlowState.COLETANDO_DADOS:
-            result = process_user_message_with_coordinator(session_id, text)
-            logger.debug(f"[Flow] result IA: {result}")
-
-            # Atualiza self.intent_data com quaisquer dados retornados
-            if result and "dados" in result:
-                for k, v in result["dados"].items():
-                    self.intent_data[k] = v
-
-            # Se veio alguma mensagem para o visitante, enfileira
-            if result and "mensagem" in result:
-                session_manager.enfileirar_visitor(session_id, result["mensagem"])
-
-            # Se valid_for_action, tentamos fuzzy
-            if result and result.get("valid_for_action"):
-                fuzzy_res = validar_intent_com_fuzzy(self.intent_data)
-                logger.info(f"[Flow] fuzzy= {fuzzy_res}")
-
-                if fuzzy_res["status"] == "válido":
-                    self.is_fuzzy_valid = True
-                    self.voip_number_morador = fuzzy_res.get("voip_number")
-                    self.state = FlowState.VALIDADO
-
-                    # Mensagem curta ao visitante:
+            try:
+                # Adicionar timeout para prevenção de bloqueio
+                result = process_user_message_with_coordinator(session_id, text)
+                logger.debug(f"[Flow] result IA: {result}")
+                
+                # Verificar se o resultado é None ou está vazio
+                if result is None:
+                    logger.error(f"[Flow] IA retornou resultado None para '{text}'")
                     session_manager.enfileirar_visitor(
                         session_id,
-                        "Ok, vamos entrar em contato com o morador. Aguarde, por favor."
+                        "Desculpe, tive um problema ao processar sua mensagem. Por favor, repita ou informe novamente seus dados."
                     )
-
-                    # Avança para CHAMANDO_MORADOR
-                    self.state = FlowState.CHAMANDO_MORADOR
-                    self.chamar_morador(session_id, session_manager)
+                    return
+                
+                # Atualiza self.intent_data com quaisquer dados retornados
+                if "dados" in result:
+                    for k, v in result["dados"].items():
+                        self.intent_data[k] = v
                 else:
+                    logger.warning(f"[Flow] Resultado sem campo 'dados': {result}")
+                    
+                # Log de segurança para entender o estado atual
+                logger.info(f"[Flow] Dados acumulados: {self.intent_data}")
+
+                # Se veio alguma mensagem para o visitante, enfileira
+                if "mensagem" in result:
+                    session_manager.enfileirar_visitor(session_id, result["mensagem"])
+                else:
+                    # Mensagem de fallback caso não tenha mensagem no resultado
                     session_manager.enfileirar_visitor(
                         session_id,
-                        f"Desculpe, dados inválidos: {fuzzy_res.get('reason','motivo')}. Vamos tentar novamente."
+                        "Por favor, continue informando os dados necessários."
                     )
+
+                # Se valid_for_action, tentamos fuzzy
+                if result.get("valid_for_action"):
+                    # Verificação de segurança nos dados antes da validação fuzzy
+                    apt = self.intent_data.get("apartment_number", "").strip()
+                    resident = self.intent_data.get("resident_name", "").strip()
+                    
+                    if not apt or not resident:
+                        logger.warning(f"[Flow] Dados incompletos antes do fuzzy: apt={apt}, resident={resident}")
+                        session_manager.enfileirar_visitor(
+                            session_id,
+                            "Preciso do número do apartamento e nome do morador para continuar."
+                        )
+                        return
+                        
+                    fuzzy_res = validar_intent_com_fuzzy(self.intent_data)
+                    logger.info(f"[Flow] fuzzy= {fuzzy_res}")
+
+                    if fuzzy_res["status"] == "válido":
+                        self.is_fuzzy_valid = True
+                        self.voip_number_morador = fuzzy_res.get("voip_number")
+                        
+                        # Atualizar o intent_data com o nome correto do apartamento/morador
+                        if "apartment_number" in fuzzy_res:
+                            self.intent_data["apartment_number"] = fuzzy_res["apartment_number"]
+                        if "match_name" in fuzzy_res:
+                            self.intent_data["resident_name"] = fuzzy_res["match_name"]
+                            
+                        self.state = FlowState.VALIDADO
+
+                        # Mensagem curta ao visitante:
+                        session_manager.enfileirar_visitor(
+                            session_id,
+                            "Ok, vamos entrar em contato com o morador. Aguarde, por favor."
+                        )
+
+                        # Avança para CHAMANDO_MORADOR
+                        self.state = FlowState.CHAMANDO_MORADOR
+                        self.chamar_morador(session_id, session_manager)
+                    else:
+                        # Mensagem com mais detalhes sobre o motivo da falha
+                        if "best_match" in fuzzy_res and fuzzy_res.get("best_score", 0) > 50:
+                            session_manager.enfileirar_visitor(
+                                session_id,
+                                f"Encontrei um morador similar ({fuzzy_res['best_match']}), mas preciso que confirme o apartamento e nome corretos."
+                            )
+                        else:
+                            session_manager.enfileirar_visitor(
+                                session_id,
+                                f"Desculpe, dados inválidos: {fuzzy_res.get('reason','motivo')}. Vamos tentar novamente."
+                            )
+            except Exception as e:
+                # Tratamento de erro global para evitar travar o fluxo
+                logger.error(f"[Flow] Erro no processamento: {str(e)}")
+                session_manager.enfileirar_visitor(
+                    session_id,
+                    "Desculpe, ocorreu um erro ao processar sua solicitação. Por favor, tente novamente."
+                )
 
         elif self.state == FlowState.CHAMANDO_MORADOR:
             session_manager.enfileirar_visitor(
