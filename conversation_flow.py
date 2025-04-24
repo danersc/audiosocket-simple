@@ -477,13 +477,27 @@ class ConversationFlow:
                 "A conversa foi finalizada. Obrigado pela sua resposta."
             )
             
-            # O texto para o visitante depende do contexto
-            if "sim" in session_id.lower() or "autorizo" in session_id.lower():
-                session_manager.enfileirar_visitor(
-                    session_id,
-                    "Sua entrada foi autorizada pelo morador. Finalizando a chamada."
-                )
-            elif "não" in session_id.lower() or "nao" in session_id.lower():
+            # O texto para o visitante depende do resultado da autorização
+            authorization_result = self.intent_data.get("authorization_result", "")
+            intent_type = self.intent_data.get("intent_type", "entrada")
+            
+            if authorization_result == "authorized":
+                if intent_type == "entrega":
+                    session_manager.enfileirar_visitor(
+                        session_id,
+                        "Sua entrega foi autorizada pelo morador. Finalizando a chamada."
+                    )
+                elif intent_type == "visita":
+                    session_manager.enfileirar_visitor(
+                        session_id, 
+                        "Sua visita foi autorizada pelo morador. Finalizando a chamada."
+                    )
+                else:
+                    session_manager.enfileirar_visitor(
+                        session_id,
+                        "Sua entrada foi autorizada pelo morador. Finalizando a chamada."
+                    )
+            elif authorization_result == "denied":
                 session_manager.enfileirar_visitor(
                     session_id,
                     "Sua entrada não foi autorizada pelo morador. Finalizando a chamada."

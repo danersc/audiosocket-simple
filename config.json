@@ -24,8 +24,10 @@
         "enabled": true,
         "goodbye_messages": {
             "visitor": {
-                "authorized": "Sua entrada foi autorizada. Obrigado por utilizar nossa portaria inteligente.",
-                "denied": "Sua entrada não foi autorizada. Obrigado por utilizar nossa portaria inteligente.",
+                "authorized_entrega": "Sua entrega foi autorizada pelo morador. Obrigado por utilizar nossa portaria inteligente.",
+                "authorized_visita": "Sua visita foi autorizada pelo morador. Obrigado por utilizar nossa portaria inteligente.",
+                "authorized": "Sua entrada foi autorizada pelo morador. Obrigado por utilizar nossa portaria inteligente.",
+                "denied": "Sua entrada não foi autorizada pelo morador. Obrigado por utilizar nossa portaria inteligente.",
                 "default": "Obrigado por utilizar nossa portaria inteligente. Até logo."
             },
             "resident": {
