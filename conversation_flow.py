@@ -91,6 +91,9 @@ class ConversationFlow:
                     apt = self.intent_data.get("apartment_number", "").strip()
                     resident = self.intent_data.get("resident_name", "").strip()
                     
+                    # Log detalhado para cada etapa
+                    logger.info(f"[Flow] Preparando para validação fuzzy com: apt={apt}, resident={resident}, data={self.intent_data}")
+                    
                     if not apt or not resident:
                         logger.warning(f"[Flow] Dados incompletos antes do fuzzy: apt={apt}, resident={resident}")
                         session_manager.enfileirar_visitor(
@@ -98,9 +101,13 @@ class ConversationFlow:
                             "Preciso do número do apartamento e nome do morador para continuar."
                         )
                         return
-                        
+                    
+                    # Verificação extra para depuração
+                    logger.info(f"[Flow] Iniciando validação fuzzy com intent_data: {self.intent_data}")
+                    
+                    # Executa a validação fuzzy
                     fuzzy_res = validar_intent_com_fuzzy(self.intent_data)
-                    logger.info(f"[Flow] fuzzy= {fuzzy_res}")
+                    logger.info(f"[Flow] Resultado do fuzzy: {fuzzy_res}")
 
                     if fuzzy_res["status"] == "válido":
                         self.is_fuzzy_valid = True
@@ -167,8 +174,17 @@ class ConversationFlow:
     def on_resident_message(self, session_id: str, text: str, session_manager):
         logger.debug(f"[Flow] Resident message in state={self.state}, text='{text}'")
 
-        if self.state == FlowState.CHAMANDO_MORADOR or self.state == FlowState.CALLING_IN_PROGRESS:
-            # Significa que o morador atendeu e começou a falar
+        # Detectar conexão de áudio do morador (trigger especial do socket)
+        is_connection_trigger = text == "AUDIO_CONNECTION_ESTABLISHED"
+        
+        if (self.state == FlowState.CHAMANDO_MORADOR or self.state == FlowState.CALLING_IN_PROGRESS) and (is_connection_trigger or text):
+            # Mensagem especial para log quando é o gatilho de conexão
+            if is_connection_trigger:
+                logger.info(f"[Flow] Detectada conexão de áudio do morador para session_id={session_id}")
+            else:
+                logger.info(f"[Flow] Morador atendeu e começou a falar: '{text}'")
+                
+            # Em qualquer caso, mudar para o estado de espera de resposta
             self.state = FlowState.ESPERANDO_MORADOR
             logger.info(f"[Flow] Morador atendeu chamada para sessão {session_id}. Mudando para estado ESPERANDO_MORADOR")
             
@@ -229,8 +245,11 @@ class ConversationFlow:
                     f"{additional_info} Por favor, responda SIM para autorizar ou NÃO para negar."
                 )
                 
-            elif "sim" in lower_text or "autorizo" in lower_text or "pode entrar" in lower_text:
+            # Lista expandida de termos de aprovação
+            elif any(word in lower_text for word in ["sim", "autorizo", "pode entrar", "autorizado", "deixa entrar", "libera", "ok", "claro", "positivo", "tá", "ta", "bom"]):
                 # Morador autorizou
+                logger.info(f"[Flow] Morador AUTORIZOU a entrada com resposta: '{text}'")
+                
                 session_manager.enfileirar_resident(
                     session_id, 
                     f"Obrigado! {visitor_name} será informado que a entrada foi autorizada."
@@ -247,8 +266,11 @@ class ConversationFlow:
                 self.state = FlowState.FINALIZADO
                 self._finalizar(session_id, session_manager)
                 
-            elif "não" in lower_text or "nao" in lower_text or "nego" in lower_text:
+            # Lista expandida de termos de negação    
+            elif any(word in lower_text for word in ["não", "nao", "nego", "negativa", "negado", "bloqueado", "barrado", "recusado", "nunca"]):
                 # Morador negou
+                logger.info(f"[Flow] Morador NEGOU a entrada com resposta: '{text}'")
+                
                 session_manager.enfileirar_resident(
                     session_id, 
                     f"Entendido. {visitor_name} será informado que a entrada não foi autorizada."
@@ -317,6 +339,8 @@ class ConversationFlow:
             
             try:
                 # Enviar comando para fazer a ligação
+                logger.info(f"[Flow] Enviando clicktocall para {self.voip_number_morador} na tentativa {self.tentativas_chamada}")
+                
                 success = self.enviar_clicktocall(self.voip_number_morador, session_id)
                 
                 if not success:
@@ -324,6 +348,9 @@ class ConversationFlow:
                     # Se falhou no envio e é a última tentativa, sair do loop
                     if self.tentativas_chamada >= self.max_tentativas:
                         break
+                    
+                    # Extra logging para diagnóstico
+                    logger.error(f"[Flow] Dados para clicktocall que falharam: voip={self.voip_number_morador}, intent={self.intent_data}")
                     continue  # Tenta novamente na próxima iteração
                 
                 logger.info(f"[Flow] AMQP enviado com sucesso para origin={self.voip_number_morador}, tentativa={self.tentativas_chamada}")

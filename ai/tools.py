@@ -136,6 +136,9 @@ def validar_intent_com_fuzzy(intent: Dict) -> Dict:
             "best_score": best_score
         }
     except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Erro na validação fuzzy: {e}", exc_info=True)
         print(f"Erro na validação fuzzy: {e}")
         return {
             "status": "erro",

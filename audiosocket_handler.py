@@ -826,9 +826,23 @@ async def iniciar_servidor_audiosocket_morador(reader, writer):
         # Atualizar estado do morador para USER_TURN para permitir interação
         existing_session.resident_state = "USER_TURN"
         
-        # Não enviar saudação, a conversa já deve estar em andamento no fluxo
-        # A mensagem para o morador será enviada pelo ConversationFlow quando
-        # processar a primeira mensagem do morador
+        # IMPORTANTE: Indicar ao conversation_flow que o morador atendeu
+        try:
+            flow = existing_session.flow
+            previous_state = flow.state
+            
+            # Este é o trigger que indica que o morador atendeu
+            call_logger.log_event("MORADOR_CONNECTED", {
+                "voip_number": flow.voip_number_morador if hasattr(flow, 'voip_number_morador') else "unknown",
+                "previous_state": previous_state.name if hasattr(previous_state, 'name') else str(previous_state)
+            })
+            
+            # Simular primeira mensagem do morador para acionar o fluxo
+            session_manager.process_resident_text(call_id, "AUDIO_CONNECTION_ESTABLISHED")
+            
+            logger.info(f"[MORADOR] Conexão de áudio estabelecida, notificado o flow para iniciar comunicação")
+        except Exception as e:
+            logger.error(f"[MORADOR] Erro ao notificar atendimento: {e}", exc_info=True)
 
     task1 = asyncio.create_task(receber_audio_morador(reader, call_id))
     task2 = asyncio.create_task(enviar_mensagens_morador(writer, call_id))
