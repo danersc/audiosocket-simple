@@ -1,18 +1,40 @@
 import asyncio
+import os
+import hashlib
 from io import BytesIO
 
 from audio_utils import converter_bytes_para_wav, converter_wav_para_slin
 import azure.cognitiveservices.speech as speechsdk
-import os
 from pydub import AudioSegment
+
+# Diretório de cache para síntese de voz
+CACHE_DIR = 'audio/cache'
+os.makedirs(CACHE_DIR, exist_ok=True)
 
 async def transcrever_audio_async(dados_audio_slin):
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, transcrever_audio, dados_audio_slin)
 
 async def sintetizar_fala_async(texto):
+    # Verificar cache antes de sintetizar
+    hash_texto = hashlib.md5(texto.encode('utf-8')).hexdigest()
+    cache_path = os.path.join(CACHE_DIR, f"{hash_texto}.slin")
+    
+    # Se já existe no cache, retornar o arquivo de áudio
+    if os.path.exists(cache_path):
+        with open(cache_path, 'rb') as f:
+            return f.read()
+    
+    # Se não está no cache, sintetizar e salvar
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, sintetizar_fala, texto)
+    audio_data = await loop.run_in_executor(None, sintetizar_fala, texto)
+    
+    # Salvar no cache para uso futuro (apenas se a síntese foi bem-sucedida)
+    if audio_data:
+        with open(cache_path, 'wb') as f:
+            f.write(audio_data)
+    
+    return audio_data
 
 def transcrever_audio(dados_audio_slin):
     audio_wav = converter_bytes_para_wav(dados_audio_slin, 8000)
@@ -41,3 +63,31 @@ def sintetizar_fala(texto):
     if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
         return converter_wav_para_slin(result.audio_data, 8000)
     return None
+
+# Pré-carregar frases comuns
+def pre_sintetizar_frases_comuns():
+    """Pré-sintetiza frases comuns para o cache."""
+    frases_comuns = [
+        "Olá, seja bem-vindo! Em que posso ajudar?",
+        "Por favor, me informe o seu nome",
+        "Por favor, me informe para qual apartamento e o nome do morador",
+        "Obrigado, aguarde um instante",
+        "Ok, vamos entrar em contato com o morador. Aguarde, por favor.",
+        "Desculpe, não consegui entender. Pode repetir por favor?",
+        "Olá, morador! Você está em ligação com a portaria inteligente."
+    ]
+    
+    for frase in frases_comuns:
+        hash_texto = hashlib.md5(frase.encode('utf-8')).hexdigest()
+        cache_path = os.path.join(CACHE_DIR, f"{hash_texto}.slin")
+        
+        # Só sintetiza se não existir no cache
+        if not os.path.exists(cache_path):
+            audio_data = sintetizar_fala(frase)
+            if audio_data:
+                with open(cache_path, 'wb') as f:
+                    f.write(audio_data)
+                print(f"Sintetizado e cacheado: '{frase}'")
+
+# Pré-sintetizar frases na inicialização (descomente para habilitar)
+# pre_sintetizar_frases_comuns()

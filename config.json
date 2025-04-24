@@ -6,13 +6,16 @@
     },
     "system": {
         "default_state": "STANDBY",
-        "silence_threshold_seconds": 2.0,
+        "silence_threshold_seconds": 1.5,
         "max_transaction_time_seconds": 30
     },
     "audio": {
         "sample_rate": 8000,
         "channels": 1,
         "format": "SLIN",
-        "chunk_size": 320
+        "chunk_size": 320,
+        "transmission_delay_ms": 10,
+        "post_audio_delay_seconds": 0.3,
+        "discard_buffer_frames": 15
     }
 }

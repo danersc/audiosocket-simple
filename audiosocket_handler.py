@@ -5,6 +5,7 @@ import logging
 import struct
 import os
 import time
+import json
 
 import webrtcvad
 
@@ -23,6 +24,22 @@ KIND_SLIN = 0x10
 # Podemos instanciar um SessionManager aqui como singleton/global.
 # Se preferir criar em outro lugar, adapte.
 session_manager = SessionManager()
+
+# Carregar configurações do config.json
+try:
+    with open('config.json', 'r') as f:
+        config = json.load(f)
+        SILENCE_THRESHOLD_SECONDS = config['system'].get('silence_threshold_seconds', 2.0)
+        TRANSMISSION_DELAY_MS = config['audio'].get('transmission_delay_ms', 20) / 1000  # Convertido para segundos
+        POST_AUDIO_DELAY_SECONDS = config['audio'].get('post_audio_delay_seconds', 0.5)
+        DISCARD_BUFFER_FRAMES = config['audio'].get('discard_buffer_frames', 25)
+        logger.info(f"Configurações carregadas: silence={SILENCE_THRESHOLD_SECONDS}s, transmission_delay={TRANSMISSION_DELAY_MS}s, post_audio_delay={POST_AUDIO_DELAY_SECONDS}s, discard_buffer={DISCARD_BUFFER_FRAMES} frames")
+except Exception as e:
+    logger.warning(f"Erro ao carregar config.json, usando valores padrão: {e}")
+    SILENCE_THRESHOLD_SECONDS = 2.0
+    TRANSMISSION_DELAY_MS = 0.02
+    POST_AUDIO_DELAY_SECONDS = 0.5
+    DISCARD_BUFFER_FRAMES = 25
 
 
 async def enviar_audio(writer: asyncio.StreamWriter, dados_audio: bytes, call_id: str = None, origem="desconhecida"):
@@ -48,7 +65,7 @@ async def enviar_audio(writer: asyncio.StreamWriter, dados_audio: bytes, call_id
         writer.write(header + chunk)
         await writer.drain()
         # Pequeno atraso para não encher o buffer do lado do Asterisk
-        await asyncio.sleep(0.02)
+        await asyncio.sleep(TRANSMISSION_DELAY_MS)
     
     # Registrar conclusão
     if call_id:
@@ -119,7 +136,7 @@ async def receber_audio_visitante(reader: asyncio.StreamReader, call_id: str):
         # Se acabamos de transitar de IA_TURN para USER_TURN, ativamos modo de escuta e descartamos frames iniciais
         if not is_listening_mode and current_state == "USER_TURN":
             is_listening_mode = True
-            discard_buffer_frames = 25  # ~0.5s de áudio para descartar possível eco
+            discard_buffer_frames = DISCARD_BUFFER_FRAMES  # Descartar quadros para evitar eco
             logger.debug(f"[{call_id}] Ativando modo de escuta de visitante")
             call_logger.log_event("LISTENING_MODE_ACTIVATED", {"timestamp": time.time()})
             
@@ -150,7 +167,7 @@ async def receber_audio_visitante(reader: asyncio.StreamReader, call_id: str):
                     else:
                         # Se passou 2s em silêncio, considera que a fala terminou
                         silence_duration = asyncio.get_event_loop().time() - silence_start
-                        if silence_duration > 2.0:
+                        if silence_duration > SILENCE_THRESHOLD_SECONDS:
                             is_speaking = False
                             
                             # Se não temos frames suficientes (< 1s), provavelmente é ruído
@@ -286,9 +303,7 @@ async def enviar_mensagens_visitante(writer: asyncio.StreamWriter, call_id: str)
             
             # Adicionar um pequeno atraso após o envio do áudio para garantir
             # que o áudio seja totalmente reproduzido antes de voltar a escutar
-            # Os 0.5s adicionais são para criar um buffer de segurança
-            post_audio_delay = 0.5
-            await asyncio.sleep(post_audio_delay)
+            await asyncio.sleep(POST_AUDIO_DELAY_SECONDS)
             
             # Mudar de volta para USER_TURN para que o sistema possa escutar o usuário
             session.visitor_state = "USER_TURN"
@@ -417,7 +432,7 @@ async def receber_audio_morador(reader: asyncio.StreamReader, call_id: str):
         # Se acabamos de transitar de IA_TURN para USER_TURN, ativamos modo de escuta
         if not is_listening_mode and current_state == "USER_TURN":
             is_listening_mode = True
-            discard_buffer_frames = 25  # ~0.5s de áudio para descartar possível eco
+            discard_buffer_frames = DISCARD_BUFFER_FRAMES  # Descartar quadros para evitar eco
             logger.debug(f"[{call_id}] Ativando modo de escuta de morador")
             call_logger.log_event("RESIDENT_LISTENING_MODE_ACTIVATED", {"timestamp": time.time()})
             
@@ -445,7 +460,7 @@ async def receber_audio_morador(reader: asyncio.StreamReader, call_id: str):
                         silence_start = asyncio.get_event_loop().time()
                     else:
                         silence_duration = asyncio.get_event_loop().time() - silence_start
-                        if silence_duration > 2.0:
+                        if silence_duration > SILENCE_THRESHOLD_SECONDS:
                             is_speaking = False
                             
                             # Se não temos frames suficientes (< 1s), provavelmente é ruído
@@ -576,9 +591,7 @@ async def enviar_mensagens_morador(writer: asyncio.StreamWriter, call_id: str):
             
             # Adicionar um pequeno atraso após o envio do áudio para garantir
             # que o áudio seja totalmente reproduzido antes de voltar a escutar
-            # Os 0.5s adicionais são para criar um buffer de segurança
-            post_audio_delay = 0.5
-            await asyncio.sleep(post_audio_delay)
+            await asyncio.sleep(POST_AUDIO_DELAY_SECONDS)
             
             # Mudar de volta para USER_TURN para que o sistema possa escutar o morador
             session.resident_state = "USER_TURN"
