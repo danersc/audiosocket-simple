@@ -3,7 +3,7 @@
 
 import enum
 import logging
-import uuid
+from uuid_v7 import uuid_v7
 from datetime import datetime
 from typing import Callable, List, Dict, Optional
 import asyncio  # <-- necessário para as funções assíncronas adicionadas
@@ -79,7 +79,8 @@ class StateMachine:
         return self.current_state == State.STANDBY
 
     def start_new_conversation(self, standby=False) -> str:
-        self.conversation_id = str(uuid.uuid4())
+        # Usando UUID v7 baseado em timestamp para melhor ordenação e compatibilidade
+        self.conversation_id = str(uuid_v7())
         self.transcricoes = []
         self.ultima_resposta = None
 

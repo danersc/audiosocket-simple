@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-import socket, struct, threading, pyaudio, logging, uuid, time
+import socket, struct, threading, pyaudio, logging, time
+from uuid_v7 import uuid_v7
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 
@@ -8,7 +9,8 @@ KIND_ID, KIND_SLIN, KIND_HANGUP = 0x01, 0x10, 0x00
 class AudioSocketClient:
     def __init__(self, host='127.0.0.1', port=8080):  # Mudando para localhost
         self.host, self.port = host, port
-        self.call_id = uuid.uuid4().bytes
+        # Gerando UUID v7 baseado em timestamp para melhor ordenação e compatibilidade
+        self.call_id = uuid_v7().bytes
         self.sample_rate, self.channels, self.chunk_size = 8000, 1, 320
         self.format = pyaudio.paInt16
         self.running = False
@@ -19,8 +21,7 @@ class AudioSocketClient:
         self.socket.connect((self.host, self.port))
         
         # Enviar ID da chamada
-        call_uuid = uuid.UUID(bytes=self.call_id)
-        logging.info(f"Enviando ID da chamada: {call_uuid}")
+        logging.info(f"Enviando ID da chamada (UUID v7): {self.call_id.hex()}")
         self.socket.sendall(struct.pack('>B H', KIND_ID, len(self.call_id)) + self.call_id)
         
         logging.info("Conectado ao servidor! Iniciando transmissão de áudio...")

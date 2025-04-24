@@ -5,8 +5,8 @@ Este script simula uma chamada e gera logs para análise.
 """
 
 import asyncio
-import uuid
 import time
+from uuid_v7 import uuid_v7
 import logging
 from utils.call_logger import CallLoggerManager
 import random
@@ -16,8 +16,8 @@ logger = logging.getLogger(__name__)
 
 async def simulate_call(call_duration=30):
     """Simula uma chamada completa com visitante e morador."""
-    # Gerar um ID único para a chamada
-    call_id = str(uuid.uuid4())
+    # Gerar um ID único para a chamada usando UUID v7 baseado em timestamp
+    call_id = str(uuid_v7())
     logger.info(f"Iniciando chamada simulada com ID: {call_id}")
     
     # Obter o logger para esta chamada
@@ -217,7 +217,8 @@ async def simulate_call(call_duration=30):
 
 async def simulate_error_call():
     """Simula uma chamada com erros."""
-    call_id = str(uuid.uuid4())
+    # Usando UUID v7 baseado em timestamp para melhor ordenação
+    call_id = str(uuid_v7())
     logger.info(f"Iniciando chamada com erros - ID: {call_id}")
     
     call_logger = CallLoggerManager.get_logger(call_id)
