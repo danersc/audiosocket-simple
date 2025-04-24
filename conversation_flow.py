@@ -372,9 +372,45 @@ class ConversationFlow:
     # ----------------------------------------------------
     def _finalizar(self, session_id: str, session_manager):
         """
-        Encerra a conversa e remove a sessão (se preferir).
+        Prepara o encerramento controlado da conversa e das conexões.
+        
+        1. Envia mensagens finais a ambos os participantes
+        2. Aciona o mecanismo de encerramento controlado
+        3. O session_manager sinaliza que as conexões devem ser encerradas
+        4. As tasks assíncronas de audiosocket detectam o sinal e encerram graciosamente
         """
-        session_manager.enfileirar_resident(session_id, "Conversa encerrada.")
-        session_manager.enfileirar_visitor(session_id, "Conversa encerrada. Obrigado.")
-
+        logger.info(f"[Flow] Iniciando encerramento controlado da sessão {session_id}")
+        
+        # Mensagens para os participantes
+        if self.state in [FlowState.CHAMANDO_MORADOR, FlowState.CALLING_IN_PROGRESS, FlowState.ESPERANDO_MORADOR]:
+            # Se o morador estava envolvido, avisar ambos
+            session_manager.enfileirar_resident(
+                session_id, 
+                "A conversa foi finalizada. Obrigado pela sua resposta."
+            )
+            
+            # O texto para o visitante depende do contexto
+            if "sim" in session_id.lower() or "autorizo" in session_id.lower():
+                session_manager.enfileirar_visitor(
+                    session_id,
+                    "Sua entrada foi autorizada pelo morador. Finalizando a chamada."
+                )
+            elif "não" in session_id.lower() or "nao" in session_id.lower():
+                session_manager.enfileirar_visitor(
+                    session_id,
+                    "Sua entrada não foi autorizada pelo morador. Finalizando a chamada."
+                )
+            else:
+                session_manager.enfileirar_visitor(
+                    session_id,
+                    "A chamada com o morador foi finalizada. Obrigado por utilizar nosso sistema."
+                )
+        else:
+            # Caso padrão (apenas visitante)
+            session_manager.enfileirar_visitor(
+                session_id,
+                "Conversa finalizada. Obrigado por utilizar nosso sistema."
+            )
+        
+        # Sinalizar para as tarefas de AudioSocket que devem encerrar as conexões
         session_manager.end_session(session_id)

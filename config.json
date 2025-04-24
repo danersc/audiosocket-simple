@@ -7,7 +7,8 @@
     "system": {
         "default_state": "STANDBY",
         "silence_threshold_seconds": 1.5,
-        "max_transaction_time_seconds": 30
+        "max_transaction_time_seconds": 30,
+        "goodbye_delay_seconds": 3.0
     },
     "audio": {
         "sample_rate": 8000,
@@ -17,5 +18,18 @@
         "transmission_delay_ms": 10,
         "post_audio_delay_seconds": 0.3,
         "discard_buffer_frames": 15
+    },
+    "call_termination": {
+        "enabled": true,
+        "goodbye_messages": {
+            "visitor": {
+                "authorized": "Sua entrada foi autorizada. Obrigado por utilizar nossa portaria inteligente.",
+                "denied": "Sua entrada não foi autorizada. Obrigado por utilizar nossa portaria inteligente.",
+                "default": "Obrigado por utilizar nossa portaria inteligente. Até logo."
+            },
+            "resident": {
+                "default": "Obrigado pela sua resposta. Encerrando a chamada."
+            }
+        }
     }
 }

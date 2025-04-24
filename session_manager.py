@@ -26,6 +26,14 @@ class SessionData:
         self.visitor_queue: asyncio.Queue = asyncio.Queue()
         self.resident_queue: asyncio.Queue = asyncio.Queue()
 
+        # Flags para controle de terminação
+        self.should_terminate_visitor = False
+        self.should_terminate_resident = False
+        
+        # Sinal para encerrar conexões específicas
+        self.terminate_visitor_event = asyncio.Event()
+        self.terminate_resident_event = asyncio.Event()
+
         self.intent_data = {}
 
         # Aqui criamos uma instância do Flow para cada sessão
@@ -107,6 +115,28 @@ class SessionManager:
         session.flow.on_resident_message(session_id, text, self)
 
     def end_session(self, session_id: str):
+        """
+        Prepara a sessão para encerramento, sinalizando para as tarefas
+        de audiosocket que devem terminar graciosamente.
+        """
+        session = self.get_session(session_id)
+        if not session:
+            logger.warning(f"[SessionManager] Tentativa de encerrar sessão inexistente: {session_id}")
+            return
+            
+        # Sinaliza para as tarefas que devem encerrar
+        logger.info(f"[SessionManager] Sinalizando para encerrar sessão {session_id}")
+        session.terminate_visitor_event.set()
+        session.terminate_resident_event.set()
+        
+        # Não removemos a sessão imediatamente, permitindo que as tarefas
+        # de audiosocket terminem graciosamente
+
+    def _complete_session_termination(self, session_id: str):
+        """
+        Remove efetivamente a sessão após tarefas de audiosocket terem encerrado.
+        Este método deve ser chamado apenas após o encerramento completo das conexões.
+        """
         if session_id in self.sessions:
             del self.sessions[session_id]
-            logger.info(f"[SessionManager] Sessão {session_id} finalizada e removida.")
+            logger.info(f"[SessionManager] Sessão {session_id} finalizada e completamente removida.")

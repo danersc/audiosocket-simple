@@ -13,6 +13,9 @@ from speech_service import transcrever_audio_async, sintetizar_fala_async
 from session_manager import SessionManager  # Importamos o SessionManager
 from utils.call_logger import CallLoggerManager  # Importamos o CallLoggerManager
 
+# Constante para o timeout de verificação de terminação
+TERMINATE_CHECK_INTERVAL = 0.5  # segundos
+
 # Caso você use um "StateMachine" separado, pode remover ou adaptar:
 # from state_machine import State
 
@@ -33,13 +36,72 @@ try:
         TRANSMISSION_DELAY_MS = config['audio'].get('transmission_delay_ms', 20) / 1000  # Convertido para segundos
         POST_AUDIO_DELAY_SECONDS = config['audio'].get('post_audio_delay_seconds', 0.5)
         DISCARD_BUFFER_FRAMES = config['audio'].get('discard_buffer_frames', 25)
-        logger.info(f"Configurações carregadas: silence={SILENCE_THRESHOLD_SECONDS}s, transmission_delay={TRANSMISSION_DELAY_MS}s, post_audio_delay={POST_AUDIO_DELAY_SECONDS}s, discard_buffer={DISCARD_BUFFER_FRAMES} frames")
+        GOODBYE_DELAY_SECONDS = config['system'].get('goodbye_delay_seconds', 3.0)  # Tempo para ouvir mensagem de despedida
+        logger.info(f"Configurações carregadas: silence={SILENCE_THRESHOLD_SECONDS}s, transmission_delay={TRANSMISSION_DELAY_MS}s, post_audio_delay={POST_AUDIO_DELAY_SECONDS}s, discard_buffer={DISCARD_BUFFER_FRAMES} frames, goodbye_delay={GOODBYE_DELAY_SECONDS}s")
 except Exception as e:
     logger.warning(f"Erro ao carregar config.json, usando valores padrão: {e}")
     SILENCE_THRESHOLD_SECONDS = 2.0
     TRANSMISSION_DELAY_MS = 0.02
     POST_AUDIO_DELAY_SECONDS = 0.5
     DISCARD_BUFFER_FRAMES = 25
+    GOODBYE_DELAY_SECONDS = 3.0
+
+
+async def check_terminate_flag(session, call_id, role, call_logger=None):
+    """
+    Tarefa auxiliar que monitora periodicamente se uma sessão deve ser encerrada.
+    Retorna True se a terminação foi solicitada.
+    """
+    event = session.terminate_visitor_event if role == "visitante" else session.terminate_resident_event
+    
+    try:
+        await asyncio.wait_for(event.wait(), timeout=TERMINATE_CHECK_INTERVAL)
+        logger.info(f"[{call_id}] Sinal de terminação detectado para {role}")
+        if call_logger:
+            call_logger.log_event("TERMINATION_SIGNAL_DETECTED", {
+                "role": role,
+                "timestamp": time.time()
+            })
+        return True
+    except asyncio.TimeoutError:
+        # Timeout normal, continua verificando
+        return False
+
+
+async def send_goodbye_and_terminate(writer, session, call_id, role, call_logger=None):
+    """
+    Envia uma mensagem de despedida final e encerra a conexão.
+    """
+    # Mensagem de despedida com base no papel (visitor/resident)
+    goodbye_msg = "Obrigado por utilizar nossa portaria inteligente. Até a próxima!"
+    
+    # Determinar qual fila de mensagens usar
+    if role == "visitante":
+        session_manager.enfileirar_visitor(call_id, goodbye_msg)
+    else:
+        session_manager.enfileirar_resident(call_id, goodbye_msg)
+    
+    # Registrar evento de envio de despedida
+    if call_logger:
+        call_logger.log_event("SENDING_GOODBYE", {
+            "role": role,
+            "message": goodbye_msg
+        })
+    
+    # Aguardar um tempo para que a mensagem seja enviada e ouvida
+    logger.info(f"[{call_id}] Aguardando {GOODBYE_DELAY_SECONDS}s para encerrar conexão com {role}")
+    await asyncio.sleep(GOODBYE_DELAY_SECONDS)
+    
+    # Fechar a conexão
+    if call_logger:
+        call_logger.log_event("CONNECTION_CLOSING", {
+            "role": role,
+            "reason": "controlled_termination"
+        })
+    
+    writer.close()
+    await writer.wait_closed()
+    logger.info(f"[{call_id}] Conexão com {role} encerrada com sucesso")
 
 
 async def enviar_audio(writer: asyncio.StreamWriter, dados_audio: bytes, call_id: str = None, origem="desconhecida"):
@@ -81,7 +143,8 @@ async def receber_audio_visitante(reader: asyncio.StreamReader, call_id: str):
     Tarefa que fica lendo o áudio do visitante, detecta quando ele fala (usando VAD)
     e chama `session_manager.process_visitor_text(...)` ao fim de cada frase.
     
-    Agora com controle de estado para evitar retroalimentação durante a fala da IA.
+    Agora com controle de estado para evitar retroalimentação durante a fala da IA
+    e suporte para encerramento gracioso da conexão.
     """
     call_logger = CallLoggerManager.get_logger(call_id)
     vad = webrtcvad.Vad(2)  # Agressivo 0-3
@@ -103,8 +166,21 @@ async def receber_audio_visitante(reader: asyncio.StreamReader, call_id: str):
     discard_buffer_frames = 0
     
     while True:
+        # Verificar sinal de terminação
+        if session.terminate_visitor_event.is_set():
+            logger.info(f"[{call_id}] Detectado sinal para encerrar recebimento de áudio do visitante")
+            call_logger.log_event("TERMINATE_VISITOR_AUDIO", {
+                "reason": "session_terminated",
+                "timestamp": time.time()
+            })
+            break
+        
         try:
-            header = await reader.readexactly(3)
+            # Uso de wait_for com timeout para permitir verificação de terminação
+            header = await asyncio.wait_for(reader.readexactly(3), timeout=0.5)
+        except asyncio.TimeoutError:
+            # Timeout apenas para verificação de terminação, continuamos normalmente
+            continue
         except asyncio.IncompleteReadError:
             logger.info(f"[{call_id}] Visitante desconectou (EOF).")
             call_logger.log_call_ended("visitor_disconnected")
@@ -236,6 +312,7 @@ async def enviar_mensagens_visitante(writer: asyncio.StreamWriter, call_id: str)
     para o visitante no SessionManager, sintetiza e envia via áudio.
     
     Atualiza o estado da sessão durante a fala da IA para evitar retroalimentação.
+    Suporte para encerramento gracioso.
     """
     call_logger = CallLoggerManager.get_logger(call_id)
     
@@ -245,8 +322,28 @@ async def enviar_mensagens_visitante(writer: asyncio.StreamWriter, call_id: str)
         logger.error(f"[{call_id}] Sessão não encontrada para enviar mensagens")
         return
     
+    # Flag para controlar encerramento com mensagem final
+    final_message_sent = False
+    
     while True:
+        # Verificar sinal de terminação
+        if session.terminate_visitor_event.is_set() and not final_message_sent:
+            # Enviar mensagem de despedida e encerrar
+            logger.info(f"[{call_id}] Iniciando despedida para visitante")
+            await send_goodbye_and_terminate(writer, session, call_id, "visitante", call_logger)
+            
+            # Marcar que a mensagem de despedida foi enviada
+            final_message_sent = True
+            
+            # Sinalizar que o encerramento está concluído
+            session_manager._complete_session_termination(call_id)
+            break
+            
         await asyncio.sleep(0.2)  # Ajuste conforme sua necessidade
+
+        # Se já está em modo de encerramento, não processa novas mensagens
+        if session.terminate_visitor_event.is_set():
+            continue
 
         # Tenta buscar uma mensagem
         msg = session_manager.get_message_for_visitor(call_id)
@@ -377,7 +474,8 @@ async def iniciar_servidor_audiosocket_visitante(reader, writer):
 
 async def receber_audio_morador(reader: asyncio.StreamReader, call_id: str):
     """
-    Versão equivalente para o morador, com controle de estado para evitar retroalimentação.
+    Versão equivalente para o morador, com controle de estado para evitar retroalimentação
+    e suporte para encerramento gracioso.
     """
     call_logger = CallLoggerManager.get_logger(call_id)
     vad = webrtcvad.Vad(2)
@@ -399,8 +497,21 @@ async def receber_audio_morador(reader: asyncio.StreamReader, call_id: str):
     discard_buffer_frames = 0
 
     while True:
+        # Verificar sinal de terminação
+        if session.terminate_resident_event.is_set():
+            logger.info(f"[{call_id}] Detectado sinal para encerrar recebimento de áudio do morador")
+            call_logger.log_event("TERMINATE_RESIDENT_AUDIO", {
+                "reason": "session_terminated",
+                "timestamp": time.time()
+            })
+            break
+        
         try:
-            header = await reader.readexactly(3)
+            # Uso de wait_for com timeout para permitir verificação de terminação
+            header = await asyncio.wait_for(reader.readexactly(3), timeout=0.5)
+        except asyncio.TimeoutError:
+            # Timeout apenas para verificação de terminação, continuamos normalmente
+            continue
         except asyncio.IncompleteReadError:
             logger.info(f"[{call_id}] Morador desconectou (EOF).")
             call_logger.log_call_ended("resident_disconnected")
@@ -526,6 +637,7 @@ async def enviar_mensagens_morador(writer: asyncio.StreamWriter, call_id: str):
     Fica buscando mensagens para o morador, sintetiza e envia via áudio.
     
     Atualiza o estado da sessão durante a fala da IA para evitar retroalimentação.
+    Suporte para encerramento gracioso.
     """
     call_logger = CallLoggerManager.get_logger(call_id)
     
@@ -535,8 +647,30 @@ async def enviar_mensagens_morador(writer: asyncio.StreamWriter, call_id: str):
         logger.error(f"[{call_id}] Sessão não encontrada para enviar mensagens ao morador")
         return
     
+    # Flag para controlar encerramento com mensagem final
+    final_message_sent = False
+    
     while True:
+        # Verificar sinal de terminação
+        if session.terminate_resident_event.is_set() and not final_message_sent:
+            # Enviar mensagem de despedida e encerrar
+            logger.info(f"[{call_id}] Iniciando despedida para morador")
+            await send_goodbye_and_terminate(writer, session, call_id, "morador", call_logger)
+            
+            # Marcar que a mensagem de despedida foi enviada
+            final_message_sent = True
+            
+            # Sinalizar que o encerramento está concluído
+            # Não chamamos _complete_session_termination aqui, pois o visitante 
+            # tem maior precedência e fará isso
+            break
+        
         await asyncio.sleep(0.2)
+        
+        # Se já está em modo de encerramento, não processa novas mensagens
+        if session.terminate_resident_event.is_set():
+            continue
+            
         msg = session_manager.get_message_for_resident(call_id)
         if msg is not None:
             logger.info(f"[{call_id}] Enviando mensagem ao morador: {msg}")
