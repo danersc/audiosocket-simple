@@ -224,7 +224,7 @@ def conversation_extractor_intent_task(user_message: str, conversation_history: 
         Regras:
         - NÃO repita o que já foi dito.
         - NÃO reinicie a conversa.
-        - Não peça dados que já estão no identificados.
+        - Não peça dados que já estão identificados.
         """,
         expected_output=""""
         Responda em formato JSON onde o campo intent_type deve estar preenchido com a intenção do visitante. Os outros
