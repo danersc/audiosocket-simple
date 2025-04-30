@@ -27,11 +27,12 @@ class ConversationFlow:
     Define o fluxo de interação entre visitante e morador, passo a passo.
     """
 
-    def __init__(self):
+    def __init__(self, extension_manager=None):
         self.state = FlowState.COLETANDO_DADOS
         self.intent_data = {}
         self.is_fuzzy_valid = False
         self.voip_number_morador: Optional[str] = None
+        self.extension_manager = extension_manager
 
         # Para controlar tentativas de chamada
         self.tentativas_chamada = 0
@@ -502,6 +503,18 @@ class ConversationFlow:
             return False
 
         try:
+            # Se temos um extension_manager, tentamos obter o ramal de retorno correto
+            ramal_retorno = morador_voip_number
+            if self.extension_manager:
+                ext_info = self.extension_manager.get_extension_info(call_id=guid)
+                if ext_info:
+                    ramal_retorno = ext_info.get('ramal_retorno', morador_voip_number)
+                    logger.info(f"[Flow] Usando ramal de retorno dinâmico: {ramal_retorno} para sessão {guid}")
+                else:
+                    logger.warning(f"[Flow] Usando ramal de retorno padrão: {morador_voip_number}, pois não encontrei configuração dinâmica")
+            else:
+                logger.warning(f"[Flow] Extension manager não disponível, usando ramal padrão: {morador_voip_number}")
+
             credentials = pika.PlainCredentials(rabbit_user, rabbit_password)
             parameters = pika.ConnectionParameters(
                 host=rabbit_host,
@@ -523,7 +536,7 @@ class ConversationFlow:
                     "destiny": "IA",
                     "guid": guid,  # GUID da sessão original
                     "license": "123456789012",
-                    "origin": morador_voip_number
+                    "origin": ramal_retorno  # Usando o ramal dinâmico ou o padrão
                 },
                 "operation": {
                     "eventcode": "8001",
@@ -540,7 +553,7 @@ class ConversationFlow:
                 body=json.dumps(payload)
             )
             
-            logger.info(f"[Flow] Mensagem AMQP enviada: origin={morador_voip_number}, guid={guid}, timestamp={current_timestamp}")
+            logger.info(f"[Flow] Mensagem AMQP enviada: origin={ramal_retorno}, guid={guid}, timestamp={current_timestamp}")
             connection.close()
             return True
             
@@ -579,7 +592,22 @@ class ConversationFlow:
             authorization_result = self.intent_data.get("authorization_result", "")
             intent_type = self.intent_data.get("intent_type", "entrada")
             
-            if authorization_result == "authorized":
+            # Verificar se é o caso de teste para o KIND_HANGUP
+            is_test_hangup = self.intent_data.get("test_hangup", False)
+            
+            if is_test_hangup:
+                # Definir flag específica para teste de hangup
+                session = session_manager.get_session(session_id)
+                if session:
+                    session.intent_data["test_hangup"] = True
+                    logger.info(f"[Flow] Flag de teste KIND_HANGUP ativada para sessão {session_id}")
+                
+                # Usar mensagem de finalização específica para teste
+                session_manager.enfileirar_visitor(
+                    session_id,
+                    "A chamada com o morador foi finalizada. Obrigado por utilizar nosso sistema."
+                )
+            elif authorization_result == "authorized":
                 if intent_type == "entrega":
                     session_manager.enfileirar_visitor(
                         session_id,

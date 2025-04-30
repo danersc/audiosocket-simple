@@ -14,11 +14,29 @@ class AudioSocketClient:
         self.sample_rate, self.channels, self.chunk_size = 8000, 1, 320
         self.format = pyaudio.paInt16
         self.running = False
+        
+        # Socket reconfigurado para melhor performance
+        self.socket_buffer_size = 1024 * 16  # 16KB de buffer
 
     def connect(self):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        
+        # Configurar buffer de socket
+        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, self.socket_buffer_size)
+        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, self.socket_buffer_size)
+        
+        # Configurar timeout para operações de socket
+        self.socket.settimeout(2.0)  # 2 segundos de timeout
+        
+        # Opções avançadas para TCP
+        # Desabilitar algoritmo de Nagle para reduzir latência
+        self.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        
         logging.info(f"Tentando conectar a {self.host}:{self.port}...")
         self.socket.connect((self.host, self.port))
+        
+        # Remover timeout após conexão estabelecida
+        self.socket.settimeout(None)
         
         # Enviar ID da chamada
         logging.info(f"Enviando ID da chamada: {self.call_id.hex()}")
@@ -38,11 +56,15 @@ class AudioSocketClient:
 
     def send_audio(self):
         p = pyaudio.PyAudio()
-        stream = p.open(format=self.format, channels=self.channels, rate=self.sample_rate, input=True, frames_per_buffer=self.chunk_size//2)
+        # Configurar buffer de áudio maior
+        stream = p.open(format=self.format, channels=self.channels, rate=self.sample_rate, 
+                       input=True, frames_per_buffer=self.chunk_size//2)
         try:
             while self.running:
                 data = stream.read(self.chunk_size//2, exception_on_overflow=False)
                 self.socket.sendall(struct.pack('>B H', KIND_SLIN, len(data)) + data)
+                # Adicionar pequeno delay para evitar sobrecarga de pacotes
+                time.sleep(0.02)  # 20ms de delay entre pacotes
         except Exception as e:
             logging.error(f"Erro no envio de áudio: {e}")
             self.running = False
@@ -52,9 +74,16 @@ class AudioSocketClient:
 
     def receive_audio(self):
         p = pyaudio.PyAudio()
-        stream = p.open(format=self.format, channels=self.channels, rate=self.sample_rate, output=True)
+        # Configurar buffer de áudio maior para melhor qualidade de reprodução
+        stream = p.open(format=self.format, channels=self.channels, rate=self.sample_rate, 
+                       output=True, frames_per_buffer=1024, 
+                       # Adicionar parâmetros para melhorar a qualidade do áudio
+                       output_device_index=None,  # Usar dispositivo padrão
+                       start=True)  # Começar imediatamente
         last_audio_time = 0
         audio_count = 0
+        audio_buffer = []  # Buffer para acumular pacotes antes de reproduzir
+        
         try:
             while self.running:
                 header = self.socket.recv(3)
@@ -66,7 +95,15 @@ class AudioSocketClient:
                 payload = self.socket.recv(length)
                 
                 if kind == KIND_SLIN:
-                    stream.write(payload)
+                    # Acumular pacotes no buffer para reprodução mais suave
+                    audio_buffer.append(payload)
+                    
+                    # Quando tivermos alguns pacotes acumulados, reproduzir tudo de uma vez
+                    if len(audio_buffer) >= 2:  # Ajuste este valor conforme necessário
+                        combined_payload = b''.join(audio_buffer)
+                        stream.write(combined_payload)
+                        audio_buffer = []  # Limpar buffer após reprodução
+                    
                     audio_count += 1
                     
                     # A cada 50 pacotes de áudio, mostramos um indicador
@@ -116,7 +153,7 @@ if __name__ == "__main__":
     # Adicionar opções de linha de comando
     parser = argparse.ArgumentParser(description='Cliente de microfone para AudioSocket')
     parser.add_argument('--host', default='127.0.0.1', help='Endereço do servidor (padrão: 127.0.0.1)')
-    parser.add_argument('--port', type=int, default=8080, help='Porta do servidor (padrão: 8080)')
+    parser.add_argument('--port', type=int, default=8080, help='Porta do servidor (padrão: 8101)')
     args = parser.parse_args()
     
     # Usar os valores fornecidos pelo usuário ou os padrões

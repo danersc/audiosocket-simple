@@ -6,12 +6,15 @@ import struct
 import os
 import time
 import json
+import socket
+from typing import Optional
 
 import webrtcvad
 
 from speech_service import transcrever_audio_async, sintetizar_fala_async
 from session_manager import SessionManager  # Importamos o SessionManager
 from utils.call_logger import CallLoggerManager  # Importamos o CallLoggerManager
+from extensions.resource_manager import resource_manager  # Importamos o ResourceManager
 
 # Constante para o timeout de verificação de terminação
 TERMINATE_CHECK_INTERVAL = 0.5  # segundos
@@ -27,6 +30,16 @@ KIND_SLIN = 0x10
 # Podemos instanciar um SessionManager aqui como singleton/global.
 # Se preferir criar em outro lugar, adapte.
 session_manager = SessionManager()
+
+# Variável global para armazenar o extension_manager
+extension_manager = None
+
+def set_extension_manager(manager):
+    """
+    Define o extension_manager global para ser usado pelo handler.
+    """
+    global extension_manager
+    extension_manager = manager
 
 # Carregar configurações do config.json
 try:
@@ -47,6 +60,21 @@ except Exception as e:
     POST_AUDIO_DELAY_SECONDS = 0.5
     DISCARD_BUFFER_FRAMES = 25
     GOODBYE_DELAY_SECONDS = 3.0
+
+
+# Função auxiliar para obter a porta local de uma conexão
+def get_local_port(writer) -> Optional[int]:
+    """
+    Obtém a porta local de uma conexão.
+    """
+    try:
+        sock = writer.get_extra_info('socket')
+        if sock:
+            _, port = sock.getsockname()
+            return port
+    except:
+        pass
+    return None
 
 
 async def check_terminate_flag(session, call_id, role, call_logger=None):
@@ -111,7 +139,10 @@ async def send_goodbye_and_terminate(writer, session, call_id, role, call_logger
         # Obter mensagem de despedida baseada na configuração
         # Decisão baseada no papel e no estado da conversa
         if role == "visitante":
-            if session.intent_data.get("authorization_result") == "authorized":
+            # Verificar se estamos no teste específico com a mensagem de finalização
+            if session.intent_data.get("test_hangup") == True:
+                goodbye_msg = "A chamada com o morador foi finalizada. Obrigado por utilizar nosso sistema."
+            elif session.intent_data.get("authorization_result") == "authorized":
                 goodbye_msg = config.get('call_termination', {}).get('goodbye_messages', {}).get('visitor', {}).get(
                     'authorized', "Sua entrada foi autorizada. Obrigado por utilizar nossa portaria inteligente.")
             elif session.intent_data.get("authorization_result") == "denied":
@@ -150,6 +181,26 @@ async def send_goodbye_and_terminate(writer, session, call_id, role, call_logger
             # Aguardar um tempo para que a mensagem seja ouvida
             logger.info(f"[{call_id}] Aguardando {GOODBYE_DELAY_SECONDS}s para o {role} ouvir a despedida")
             await asyncio.sleep(GOODBYE_DELAY_SECONDS)
+            
+            # Verificar se é o teste específico com a mensagem de finalização
+            if role == "visitante" and session.intent_data.get("test_hangup") == True:
+                # Enviar KIND_HANGUP explicitamente para finalizar a conexão
+                logger.info(f"[{call_id}] Enviando KIND_HANGUP para finalizar a conexão ativamente")
+                try:
+                    # Enviar KIND_HANGUP (0x00) com payload length 0
+                    writer.write(struct.pack('>B H', 0x00, 0))
+                    await writer.drain()
+                    if call_logger:
+                        call_logger.log_event("HANGUP_SENT", {
+                            "role": role,
+                            "reason": "active_termination_test"
+                        })
+                except Exception as hangup_error:
+                    logger.error(f"[{call_id}] Erro ao enviar KIND_HANGUP: {hangup_error}")
+                    if call_logger:
+                        call_logger.log_error("HANGUP_SEND_FAILED", 
+                                        f"Erro ao enviar KIND_HANGUP", 
+                                        {"error": str(hangup_error)})
         else:
             logger.error(f"[{call_id}] Falha ao sintetizar mensagem de despedida para {role}")
             if call_logger:
@@ -192,16 +243,30 @@ async def enviar_audio(writer: asyncio.StreamWriter, dados_audio: bytes, call_id
             "target": "visitor" if is_visitor else "resident",
             "audio_size_bytes": len(dados_audio)
         })
+        
+        # Registrar sessão no ResourceManager se ainda não estiver registrada
+        if call_id not in resource_manager.active_sessions:
+            porta = get_local_port(writer)
+            resource_manager.register_session(call_id, porta)
     
     start_time = time.time()
     chunk_size = 320
+    
+    # Verificar se precisamos aplicar throttling baseado na carga do sistema
+    should_throttle = resource_manager.should_throttle_audio()
+    transmission_delay = TRANSMISSION_DELAY_MS * 1.5 if should_throttle else TRANSMISSION_DELAY_MS
+    
+    if should_throttle:
+        logger.warning(f"[{call_id}] Aplicando throttling na transmissão de áudio devido à alta carga do sistema")
+    
     for i in range(0, len(dados_audio), chunk_size):
         chunk = dados_audio[i : i + chunk_size]
         header = struct.pack(">B H", KIND_SLIN, len(chunk))
         writer.write(header + chunk)
         await writer.drain()
         # Pequeno atraso para não encher o buffer do lado do Asterisk
-        await asyncio.sleep(TRANSMISSION_DELAY_MS)
+        # Se sistema estiver sobrecarregado, aumentamos o delay
+        await asyncio.sleep(transmission_delay)
     
     # Registrar conclusão
     if call_id:
@@ -344,9 +409,9 @@ async def receber_audio_visitante(reader: asyncio.StreamReader, call_id: str):
                             # Mudar estado para WAITING durante processamento
                             session.visitor_state = "WAITING"
                             
-                            # Transcrever com medição de tempo
+                            # Transcrever com medição de tempo e monitoramento de recursos
                             start_time = time.time()
-                            texto = await transcrever_audio_async(audio_data)
+                            texto = await transcrever_audio_async(audio_data, call_id=call_id)
                             transcription_time = (time.time() - start_time) * 1000
                             
                             if texto:
@@ -487,6 +552,13 @@ async def enviar_mensagens_visitante(writer: asyncio.StreamWriter, call_id: str)
 
 
 async def iniciar_servidor_audiosocket_visitante(reader, writer):
+    """
+    Versão modificada que registra a porta local usada pela conexão.
+    """
+    # Recuperar porta local
+    local_port = get_local_port(writer)
+    
+    # Resto do código atual
     header = await reader.readexactly(3)
     kind = header[0]
     length = int.from_bytes(header[1:3], "big")
@@ -495,14 +567,20 @@ async def iniciar_servidor_audiosocket_visitante(reader, writer):
     # Converter para UUID com formato de traços
     import uuid
     call_id = str(uuid.UUID(bytes=call_id_bytes))
-
-    logger.info(f"[VISITANTE] Recebido Call ID: {call_id}")
+    
+    # Registrar porta usada para este call_id
+    if extension_manager and local_port:
+        ext_info = extension_manager.get_extension_info(porta=local_port)
+        logger.info(f"[VISITANTE] Call ID: {call_id} na porta {local_port}, ramal: {ext_info.get('ramal_ia', 'desconhecido')}")
+    else:
+        logger.info(f"[VISITANTE] Call ID: {call_id}")
     
     # Inicializar logger específico para esta chamada
     call_logger = CallLoggerManager.get_logger(call_id)
     call_logger.log_event("CALL_SETUP", {
         "type": "visitor",
-        "call_id": call_id
+        "call_id": call_id,
+        "local_port": local_port
     })
 
     session_manager.create_session(call_id)
@@ -678,9 +756,9 @@ async def receber_audio_morador(reader: asyncio.StreamReader, call_id: str):
                             # Mudar estado para WAITING durante processamento
                             session.resident_state = "WAITING"
                             
-                            # Transcrever com medição de tempo
+                            # Transcrever com medição de tempo e monitoramento de recursos
                             start_time = time.time()
-                            texto = await transcrever_audio_async(audio_data)
+                            texto = await transcrever_audio_async(audio_data, call_id=call_id)
                             transcription_time = (time.time() - start_time) * 1000
                             
                             if texto:
@@ -866,6 +944,13 @@ async def enviar_mensagens_morador(writer: asyncio.StreamWriter, call_id: str):
 
 
 async def iniciar_servidor_audiosocket_morador(reader, writer):
+    """
+    Versão modificada que registra a porta local usada pela conexão.
+    """
+    # Recuperar porta local
+    local_port = get_local_port(writer)
+    
+    # Resto do código atual
     header = await reader.readexactly(3)
     kind = header[0]
     length = int.from_bytes(header[1:3], "big")
@@ -874,14 +959,20 @@ async def iniciar_servidor_audiosocket_morador(reader, writer):
     # Converter para UUID com formato de traços
     import uuid
     call_id = str(uuid.UUID(bytes=call_id_bytes))
-
-    logger.info(f"[MORADOR] Recebido Call ID: {call_id}")
+    
+    # Registrar porta usada para este call_id
+    if extension_manager and local_port:
+        ext_info = extension_manager.get_extension_info(porta=local_port)
+        logger.info(f"[MORADOR] Call ID: {call_id} na porta {local_port}, ramal: {ext_info.get('ramal_retorno', 'desconhecido')}")
+    else:
+        logger.info(f"[MORADOR] Call ID: {call_id}")
     
     # Inicializar logger específico para esta chamada
     call_logger = CallLoggerManager.get_logger(call_id)
     call_logger.log_event("CALL_SETUP", {
         "type": "resident",
-        "call_id": call_id
+        "call_id": call_id,
+        "local_port": local_port
     })
 
     # Verificar se sessão já existe (deve existir se o fluxo estiver correto)

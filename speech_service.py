@@ -11,30 +11,75 @@ from pydub import AudioSegment
 CACHE_DIR = 'audio/cache'
 os.makedirs(CACHE_DIR, exist_ok=True)
 
-async def transcrever_audio_async(dados_audio_slin):
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, transcrever_audio, dados_audio_slin)
+async def transcrever_audio_async(dados_audio_slin, call_id=None):
+    """
+    Versão assíncrona da transcrição de áudio que aceita parâmetro de call_id
+    para recursos de monitoramento e gerenciamento.
+    """
+    try:
+        # Antes de transcrever, verificar disponibilidade no ResourceManager
+        if 'resource_manager' in globals() and call_id:
+            from extensions.resource_manager import resource_manager
+            # Adquirir semáforo para limitar número de transcrições simultâneas
+            await resource_manager.acquire_transcription_lock(call_id)
+            
+        # Usar executor para não bloquear a thread principal
+        loop = asyncio.get_event_loop()
+        start_time = asyncio.get_event_loop().time()
+        result = await loop.run_in_executor(None, transcrever_audio, dados_audio_slin)
+        
+        # Registrar métricas se temos gerenciamento de recursos
+        if 'resource_manager' in globals() and call_id:
+            duration_ms = (asyncio.get_event_loop().time() - start_time) * 1000
+            resource_manager.record_transcription(call_id, duration_ms)
+            
+        return result
+    finally:
+        # Sempre liberar o lock quando terminar
+        if 'resource_manager' in globals() and call_id:
+            resource_manager.release_transcription_lock(call_id)
 
-async def sintetizar_fala_async(texto):
+async def sintetizar_fala_async(texto, call_id=None):
+    """
+    Versão assíncrona da síntese de fala que aceita parâmetro de call_id
+    para recursos de monitoramento e gerenciamento.
+    """
     # Verificar cache antes de sintetizar
     hash_texto = hashlib.md5(texto.encode('utf-8')).hexdigest()
     cache_path = os.path.join(CACHE_DIR, f"{hash_texto}.slin")
     
-    # Se já existe no cache, retornar o arquivo de áudio
+    # Se já existe no cache, retornar o arquivo de áudio imediatamente
     if os.path.exists(cache_path):
         with open(cache_path, 'rb') as f:
             return f.read()
     
-    # Se não está no cache, sintetizar e salvar
-    loop = asyncio.get_event_loop()
-    audio_data = await loop.run_in_executor(None, sintetizar_fala, texto)
-    
-    # Salvar no cache para uso futuro (apenas se a síntese foi bem-sucedida)
-    if audio_data:
-        with open(cache_path, 'wb') as f:
-            f.write(audio_data)
-    
-    return audio_data
+    try:
+        # Antes de sintetizar, verificar disponibilidade no ResourceManager
+        if 'resource_manager' in globals() and call_id:
+            from extensions.resource_manager import resource_manager
+            # Adquirir semáforo para limitar número de sínteses simultâneas
+            await resource_manager.acquire_synthesis_lock(call_id)
+            
+        # Se não está no cache, sintetizar e salvar
+        start_time = asyncio.get_event_loop().time()
+        loop = asyncio.get_event_loop()
+        audio_data = await loop.run_in_executor(None, sintetizar_fala, texto)
+        
+        # Registrar métricas se temos gerenciamento de recursos
+        if 'resource_manager' in globals() and call_id:
+            duration_ms = (asyncio.get_event_loop().time() - start_time) * 1000
+            resource_manager.record_synthesis(call_id, duration_ms)
+        
+        # Salvar no cache para uso futuro (apenas se a síntese foi bem-sucedida)
+        if audio_data:
+            with open(cache_path, 'wb') as f:
+                f.write(audio_data)
+        
+        return audio_data
+    finally:
+        # Sempre liberar o lock quando terminar
+        if 'resource_manager' in globals() and call_id:
+            resource_manager.release_synthesis_lock(call_id)
 
 def transcrever_audio(dados_audio_slin):
     audio_wav = converter_bytes_para_wav(dados_audio_slin, 8000)

@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class SessionData:
-    def __init__(self, session_id: str):
+    def __init__(self, session_id: str, extension_manager=None):
         self.session_id = session_id
 
         self.visitor_state = "USER_TURN"
@@ -37,12 +37,14 @@ class SessionData:
         self.intent_data = {}
 
         # Aqui criamos uma instância do Flow para cada sessão
-        self.flow = ConversationFlow()
+        # Passando o extension_manager para o flow
+        self.flow = ConversationFlow(extension_manager)
 
 
 class SessionManager:
-    def __init__(self):
+    def __init__(self, extension_manager=None):
         self.sessions: Dict[str, SessionData] = {}
+        self.extension_manager = extension_manager
 
     def create_session(self, session_id: Optional[str] = None) -> SessionData:
         if not session_id:
@@ -51,7 +53,8 @@ class SessionManager:
             logger.info(f"[SessionManager] Novo UUID gerado: {session_id}")
 
         if session_id not in self.sessions:
-            self.sessions[session_id] = SessionData(session_id)
+            # Passamos o extension_manager para cada sessão
+            self.sessions[session_id] = SessionData(session_id, self.extension_manager)
             logger.info(f"[SessionManager] Criada nova sessão: {session_id}")
         return self.sessions[session_id]
 

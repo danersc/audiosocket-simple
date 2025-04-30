@@ -1,0 +1,88 @@
+"""Correção para o método start_server no ServerManager
+
+Substitua apenas o método start_server no arquivo extensions/server_manager.py
+pelo código abaixo que separa o IP de binding do IP de registro.
+"""
+
+async def start_server(self, config: Dict[str, Any]) -> Tuple[asyncio.Server, asyncio.Server]:
+    """
+    Inicia servidores socket para um ramal específico.
+    
+    Args:
+        config: Dicionário com configuração do ramal
+        
+    Returns:
+        Tuple contendo os servidores de IA e retorno
+    """
+    extension_id = config['id']
+    ramal_ia = config['ramal_ia']
+    porta_ia = config['porta_ia']
+    porta_retorno = config['porta_retorno']
+    ip_registro = config['ip_servidor']  # IP para registro/Asterisk
+    
+    # Sempre usar 0.0.0.0 para binding do socket
+    binding_ip = '0.0.0.0'
+    
+    # Verificar se as portas estão disponíveis no IP de binding
+    if not self.is_port_available(binding_ip, porta_ia):
+        logger.warning(f"Porta {porta_ia} não está disponível para ramal IA {ramal_ia}")
+        # Tenta encontrar uma porta alternativa
+        for alt_port in range(porta_ia + 1, porta_ia + 100, 2):
+            if self.is_port_available(binding_ip, alt_port):
+                logger.info(f"Usando porta alternativa {alt_port} para ramal IA {ramal_ia}")
+                porta_ia = alt_port
+                config['porta_ia'] = alt_port
+                break
+    
+    if not self.is_port_available(binding_ip, porta_retorno):
+        logger.warning(f"Porta {porta_retorno} não está disponível para ramal retorno {config['ramal_retorno']}")
+        # Tenta encontrar uma porta alternativa
+        for alt_port in range(porta_retorno + 1, porta_retorno + 100, 2):
+            if self.is_port_available(binding_ip, alt_port):
+                logger.info(f"Usando porta alternativa {alt_port} para ramal retorno {config['ramal_retorno']}")
+                porta_retorno = alt_port
+                config['porta_retorno'] = alt_port
+                break
+    
+    # Criar servidores assíncronos
+    try:
+        # Servidor para visitante (IA)
+        ia_server = await asyncio.start_server(
+            iniciar_servidor_audiosocket_visitante,
+            binding_ip,  # Use 0.0.0.0 para binding
+            porta_ia
+        )
+        
+        # Servidor para morador (retorno)
+        retorno_server = await asyncio.start_server(
+            iniciar_servidor_audiosocket_morador,
+            binding_ip,  # Use 0.0.0.0 para binding
+            porta_retorno
+        )
+        
+        # Criar uma cópia da configuração e adicionar detalhes de binding
+        config_copy = config.copy()
+        config_copy['binding_ip'] = binding_ip
+        
+        # Armazenar servidores e configuração
+        self.servers[extension_id] = {
+            'ia_server': ia_server,
+            'retorno_server': retorno_server,
+            'config': config_copy
+        }
+        
+        # Atualizar mapeamentos
+        self.port_to_extension[porta_ia] = extension_id
+        self.port_to_extension[porta_retorno] = extension_id
+        self.extension_to_id[ramal_ia] = extension_id
+        self.return_to_ia_port[porta_retorno] = porta_ia
+        
+        logger.info(f"Iniciados servidores para ramal {ramal_ia}: "
+                   f"IA: Socket em {binding_ip}:{porta_ia}, Registro para Asterisk: {ip_registro}:{porta_ia}, "
+                   f"Retorno: Socket em {binding_ip}:{porta_retorno}, Registro para Asterisk: {ip_registro}:{porta_retorno}")
+        
+        return ia_server, retorno_server
+    
+    except Exception as e:
+        logger.error(f"Erro ao iniciar servidores para ramal {ramal_ia}: {e}")
+        raise
