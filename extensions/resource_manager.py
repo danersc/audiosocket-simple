@@ -30,6 +30,9 @@ class ResourceManager:
         # Métricas de performance
         self.metrics: Dict[str, Dict] = {}
         
+        # Conexões ativas para cada sessão (permite enviar KIND_HANGUP)
+        self.active_connections: Dict[str, Dict] = {}
+        
         # Ajustes dinâmicos baseados no hardware
         self._configure_based_on_hardware()
         
@@ -174,6 +177,53 @@ class ResourceManager:
         
         # Se temos muitas sessões ativas E a CPU está alta, ativamos throttling
         return active_sessions > 3 and cpu_percent > 85
+        
+    def register_connection(self, call_id: str, role: str, reader, writer):
+        """
+        Registra uma conexão de socket ativa para permitir envio do KIND_HANGUP.
+        
+        Args:
+            call_id: ID da chamada
+            role: 'visitor' ou 'resident'
+            reader: StreamReader da conexão
+            writer: StreamWriter da conexão
+        """
+        if call_id not in self.active_connections:
+            self.active_connections[call_id] = {}
+            
+        self.active_connections[call_id][role] = {
+            'reader': reader,
+            'writer': writer,
+            'timestamp': time.time()
+        }
+        logger.debug(f"Conexão registrada para {call_id} ({role})")
+        
+    def unregister_connection(self, call_id: str, role: str):
+        """
+        Remove uma conexão quando ela é encerrada.
+        """
+        if call_id in self.active_connections and role in self.active_connections[call_id]:
+            del self.active_connections[call_id][role]
+            logger.debug(f"Conexão removida para {call_id} ({role})")
+            
+            # Se não há mais conexões para esta chamada, limpar
+            if not self.active_connections[call_id]:
+                del self.active_connections[call_id]
+                
+    def get_active_connection(self, call_id: str, role: str):
+        """
+        Retorna informações sobre uma conexão ativa.
+        
+        Args:
+            call_id: ID da chamada
+            role: 'visitor' ou 'resident'
+            
+        Returns:
+            Dict com reader e writer, ou None se não existir
+        """
+        if call_id in self.active_connections and role in self.active_connections[call_id]:
+            return self.active_connections[call_id][role]
+        return None
 
 # Instância global
 resource_manager = ResourceManager()

@@ -585,6 +585,10 @@ async def iniciar_servidor_audiosocket_visitante(reader, writer):
 
     session_manager.create_session(call_id)
 
+    # Registrar a conexão ativa no ResourceManager para permitir KIND_HANGUP
+    resource_manager.register_connection(call_id, "visitor", reader, writer)
+    logger.info(f"[{call_id}] Conexão do visitante registrada no ResourceManager")
+
     # SAUDAÇÃO:
     welcome_msg = "Olá, seja bem-vindo! Em que posso ajudar?"
     call_logger.log_event("GREETING", {"message": welcome_msg})
@@ -616,6 +620,9 @@ async def iniciar_servidor_audiosocket_visitante(reader, writer):
 
     logger.info(f"[{call_id}] Encerrando conexão do visitante.")
     call_logger.log_call_ended("visitor_connection_closed", call_duration)
+    
+    # Remover conexão do ResourceManager
+    resource_manager.unregister_connection(call_id, "visitor")
     
     # Remover logger para liberar recursos
     CallLoggerManager.remove_logger(call_id)
@@ -975,6 +982,10 @@ async def iniciar_servidor_audiosocket_morador(reader, writer):
         "local_port": local_port
     })
 
+    # Registrar a conexão ativa no ResourceManager para permitir KIND_HANGUP
+    resource_manager.register_connection(call_id, "resident", reader, writer)
+    logger.info(f"[{call_id}] Conexão do morador registrada no ResourceManager")
+
     # Verificar se sessão já existe (deve existir se o fluxo estiver correto)
     existing_session = session_manager.get_session(call_id)
     if not existing_session:
@@ -1036,6 +1047,9 @@ async def iniciar_servidor_audiosocket_morador(reader, writer):
     for t in pending:
         t.cancel()
     await asyncio.gather(*pending, return_exceptions=True)
+
+    # Remover conexão do ResourceManager
+    resource_manager.unregister_connection(call_id, "resident")
 
     writer.close()
     await writer.wait_closed()

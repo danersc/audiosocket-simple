@@ -640,6 +640,72 @@ class ConversationFlow:
                 "Conversa finalizada. Obrigado por utilizar nosso sistema."
             )
         
-        # O encerramento efetivo da sessão será feito pelo audiosocket_handler
-        # após garantir que as mensagens foram enviadas usando um delay apropriado
-        logger.info(f"[Flow] Finalizando método _finalizar - audiosocket cuidará do encerramento efetivo da sessão")
+        # Utilizar encerramento ativo KIND_HANGUP após um delay para permitir que todas as mensagens
+        # sejam enviadas e ouvidas
+        self._schedule_active_hangup(session_id, session_manager)
+        logger.info(f"[Flow] Finalização programada com encerramento ativo KIND_HANGUP para sessão {session_id}")
+    
+    def _schedule_active_hangup(self, session_id: str, session_manager, delay=5.0):
+        """
+        Agenda o envio de KIND_HANGUP ativo após um delay para encerrar a chamada.
+        O delay permite que todas as mensagens de áudio sejam reproduzidas primeiro.
+        
+        Args:
+            session_id: ID da sessão
+            session_manager: Gerenciador de sessões
+            delay: Tempo em segundos para aguardar antes de enviar KIND_HANGUP (padrão: 5s)
+        """
+        import asyncio
+        
+        async def send_hangup_after_delay():
+            # Aguardar o delay para permitir que as mensagens sejam enviadas
+            await asyncio.sleep(delay)
+            
+            # Verificar se a sessão ainda existe
+            session = session_manager.get_session(session_id)
+            if not session:
+                logger.info(f"[Flow] Sessão {session_id} já foi encerrada antes do KIND_HANGUP")
+                return
+                
+            try:
+                # Importar ResourceManager para acessar conexões ativas
+                from extensions.resource_manager import resource_manager
+                import struct
+                
+                # Enviar KIND_HANGUP para o visitante
+                visitor_conn = resource_manager.get_active_connection(session_id, "visitor")
+                if visitor_conn and 'writer' in visitor_conn:
+                    logger.info(f"[Flow] Enviando KIND_HANGUP ativo para visitante na sessão {session_id}")
+                    visitor_conn['writer'].write(struct.pack('>B H', 0x00, 0))
+                    await visitor_conn['writer'].drain()
+                else:
+                    logger.warning(f"[Flow] Conexão do visitante não encontrada para enviar KIND_HANGUP na sessão {session_id}")
+                
+                # Enviar KIND_HANGUP para o morador (se existir conexão)
+                resident_conn = resource_manager.get_active_connection(session_id, "resident")
+                if resident_conn and 'writer' in resident_conn:
+                    logger.info(f"[Flow] Enviando KIND_HANGUP ativo para morador na sessão {session_id}")
+                    resident_conn['writer'].write(struct.pack('>B H', 0x00, 0))
+                    await resident_conn['writer'].drain()
+                
+                # Após enviar os KIND_HANGUP, aguardar um pouco e finalizar a sessão completamente
+                await asyncio.sleep(1.0)
+                session_manager.end_session(session_id)
+                
+                # Uma limpeza final após mais um pequeno delay
+                await asyncio.sleep(1.0)
+                if session_manager.get_session(session_id):
+                    logger.info(f"[Flow] Forçando limpeza final da sessão {session_id}")
+                    session_manager._complete_session_termination(session_id)
+                    
+            except Exception as e:
+                logger.error(f"[Flow] Erro ao enviar KIND_HANGUP ativo: {e}", exc_info=True)
+                
+                # Em caso de erro, tentar finalizar a sessão do modo tradicional
+                session_manager.end_session(session_id)
+        
+        # Criar e iniciar a tarefa assíncrona
+        loop = asyncio.get_event_loop()
+        task = loop.create_task(send_hangup_after_delay())
+        
+        # Não aguardamos a conclusão da tarefa para não bloquear o fluxo

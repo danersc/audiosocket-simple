@@ -29,6 +29,7 @@ class APIServer:
         self.app.router.add_post('/api/refresh', self.refresh_config)
         self.app.router.add_get('/api/extensions', self.get_extensions)
         self.app.router.add_post('/api/restart', self.restart_extension)
+        self.app.router.add_post('/api/hangup', self.hangup_call)
     
     async def get_status(self, request: web.Request) -> web.Response:
         """
@@ -172,6 +173,95 @@ class APIServer:
                 "status": "error",
                 "message": f"Erro ao reiniciar ramal: {str(e)}"
             }, status=500)
+    
+    async def hangup_call(self, request: web.Request) -> web.Response:
+        """
+        Envia sinal de hangup (KIND_HANGUP, 0x00) para uma chamada ativa.
+        
+        URL: POST /api/hangup
+        Body: {"call_id": "uuid-da-chamada", "role": "visitor|resident"}
+        """
+        try:
+            from audiosocket_handler import session_manager
+            import struct
+            
+            data = await request.json()
+            
+            if 'call_id' not in data:
+                return web.json_response({
+                    "status": "error",
+                    "message": "call_id é obrigatório"
+                }, status=400)
+                
+            call_id = data['call_id']
+            role = data.get('role', 'visitor')  # Padrão é visitante
+            
+            # Validar role
+            if role not in ['visitor', 'resident']:
+                return web.json_response({
+                    "status": "error",
+                    "message": "role deve ser 'visitor' ou 'resident'"
+                }, status=400)
+            
+            # Verificar se a sessão existe
+            session = session_manager.get_session(call_id)
+            if not session:
+                return web.json_response({
+                    "status": "error",
+                    "message": f"Sessão {call_id} não encontrada"
+                }, status=404)
+            
+            # Obter a conexão ativa da sessão através do ResourceManager
+            from extensions.resource_manager import resource_manager
+            
+            connection = resource_manager.get_active_connection(call_id, role)
+            if not connection:
+                return web.json_response({
+                    "status": "error",
+                    "message": f"Conexão ativa não encontrada para {call_id} ({role})"
+                }, status=404)
+            
+            # Enviar KIND_HANGUP (0x00) com payload length 0
+            writer = connection.get('writer')
+            if not writer:
+                return web.json_response({
+                    "status": "error",
+                    "message": f"Writer não disponível para {call_id} ({role})"
+                }, status=500)
+            
+            # Enviar KIND_HANGUP (0x00)
+            writer.write(struct.pack('>B H', 0x00, 0))
+            await writer.drain()
+            
+            # Definir flag para indicar teste de hangup na sessão
+            session.intent_data["test_hangup"] = True
+            
+            # Aguardar um momento e então encerrar a sessão completamente
+            asyncio.create_task(self._cleanup_session_after_delay(call_id, session_manager))
+            
+            logger.info(f"KIND_HANGUP enviado com sucesso para {call_id} ({role})")
+            return web.json_response({
+                "status": "success",
+                "message": f"KIND_HANGUP enviado com sucesso para {call_id} ({role})"
+            })
+            
+        except Exception as e:
+            logger.error(f"Erro ao enviar KIND_HANGUP: {e}", exc_info=True)
+            return web.json_response({
+                "status": "error",
+                "message": f"Erro ao enviar KIND_HANGUP: {str(e)}"
+            }, status=500)
+    
+    async def _cleanup_session_after_delay(self, call_id, session_manager, delay=3.0):
+        """Aguarda um delay e então limpa a sessão completamente."""
+        await asyncio.sleep(delay)
+        session = session_manager.get_session(call_id)
+        if session:
+            # Sinalizar encerramento e depois forçar remoção
+            session_manager.end_session(call_id)
+            await asyncio.sleep(1.0)
+            session_manager._complete_session_termination(call_id)
+            logger.info(f"Sessão {call_id} encerrada após KIND_HANGUP")
     
     async def start(self, host: str = '0.0.0.0', port: int = 8082):
         """
