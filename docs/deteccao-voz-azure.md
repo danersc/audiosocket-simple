@@ -121,4 +121,4 @@ WARNING:[call_id] Detectado possível deadlock no Azure Speech! Forçando proces
 
 ---
 
-*Próximo documento: [11-versionamento.md](11-versionamento.md)*
+*Ver também: [11-deteccao-voz-avancada.md](11-deteccao-voz-avancada.md)*

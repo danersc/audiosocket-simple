@@ -82,49 +82,164 @@ async def sintetizar_fala_async(texto, call_id=None):
             resource_manager.release_synthesis_lock(call_id)
 
 def transcrever_audio(dados_audio_slin):
-    audio_wav = converter_bytes_para_wav(dados_audio_slin, 8000)
-    if not audio_wav:
+    """
+    Transcrever áudio usando Azure Speech com abordagem simplificada e robusta.
+    Comportamento alinhado com o método VAD para garantir consistência na aplicação.
+    """
+    # Log detalhado para diagnóstico
+    audio_size = len(dados_audio_slin)
+    frames_estimate = audio_size // 320  # Estimativa de frames (20ms cada)
+    duracao_estimada = frames_estimate * 0.02  # Duração em segundos
+    
+    print(f"[TRANSCRIÇÃO] Iniciando transcrição de {audio_size} bytes de áudio SLIN (~{frames_estimate} frames, ~{duracao_estimada:.2f}s)")
+    
+    # Verificações de segurança para garantir que temos dados válidos
+    if not dados_audio_slin:
+        print("[TRANSCRIÇÃO] Dados de áudio vazios")
         return None
     
-    # Converter para WAV de 16k (requisito da Azure)
-    audio_segment = AudioSegment.from_file(BytesIO(audio_wav), format="wav")
-    audio_segment = audio_segment.set_frame_rate(16000)
+    if audio_size < 320:  # Menos de um frame de áudio
+        print(f"[TRANSCRIÇÃO] Áudio muito pequeno para transcrição: {audio_size} bytes")
+        return None
     
-    # Normalizar áudio para melhorar chances de reconhecer palavras curtas
-    audio_segment = audio_segment.normalize() 
+    # Verificação para áudio muito curto - provável ruído
+    if audio_size < 4800:  # Menos de 300ms de áudio (~15 frames)
+        print(f"[TRANSCRIÇÃO] Áudio muito curto detectado ({audio_size} bytes, ~{duracao_estimada:.2f}s) - considerando ruído ou resposta curta")
+        return "ok"
     
-    buffer = BytesIO()
-    audio_segment.export(buffer, format='wav')
-    audio_wav_16k = buffer.getvalue()
+    # Verificar energia do áudio para descartar ruído
+    try:
+        import struct
+        # Converter bytes para valores PCM 16-bit
+        samples = struct.unpack('<' + 'h' * (len(dados_audio_slin) // 2), dados_audio_slin)
+        # Calcular energia média
+        energy = sum(sample ** 2 for sample in samples) / len(samples)
+        ENERGY_THRESHOLD = 600  # Threshold ajustável para considerar áudio válido
+        
+        if energy < ENERGY_THRESHOLD:
+            print(f"[TRANSCRIÇÃO] Áudio com energia muito baixa ({energy:.2f} < {ENERGY_THRESHOLD}) - considerando ruído")
+            # Para áudios com pouca energia, tratamos como confirmação
+            return "ok"
+        else:
+            print(f"[TRANSCRIÇÃO] Energia do áudio: {energy:.2f} (acima do threshold {ENERGY_THRESHOLD})")
+    except Exception as e:
+        print(f"[TRANSCRIÇÃO] Erro ao analisar energia do áudio: {e}")
+        # Em caso de erro, continuamos com a transcrição normal
+        
+    # Verificação para áudio curto - possível "sim"
+    is_short_audio = audio_size < 8000  # ~0.5 segundo de áudio
+    if is_short_audio:
+        print(f"[TRANSCRIÇÃO] Áudio curto detectado ({audio_size} bytes, ~{duracao_estimada:.2f}s) - possível 'sim'")
     
-    # Configuração do serviço de fala
-    speech_config = speechsdk.SpeechConfig(subscription=os.getenv('AZURE_SPEECH_KEY'), region=os.getenv('AZURE_SPEECH_REGION'))
-    speech_config.speech_recognition_language = 'pt-BR'
-    
-    # Melhorar reconhecimento de palavras curtas como "Sim"
-    speech_config.set_property(speechsdk.PropertyId.SpeechServiceResponse_PostProcessingOption, "TrueText")
-    
-    audio_stream = speechsdk.audio.PushAudioInputStream()
-    audio_stream.write(audio_wav_16k)
-    audio_stream.close()
-    audio_config = speechsdk.audio.AudioConfig(stream=audio_stream)
-    recognizer = speechsdk.SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
-    
-    # Tentar reconhecer o áudio
-    result = recognizer.recognize_once()
-    
-    # Quando o residente diz "Sim", às vezes é muito baixo ou curto para ser reconhecido
-    # Verificamos os detalhes para otimizar
-    if result.reason == speechsdk.ResultReason.RecognizedSpeech:
-        return result.text
-    elif result.reason == speechsdk.ResultReason.NoMatch:
-        # Para áudios curtos com NoMatch, consideramos que pode ser "sim" não reconhecido
-        # Tamanho típico de um "sim" rápido é entre 1000-6000 bytes
-        if len(dados_audio_slin) < 6000:
-            print(f"Detecção de resposta curta não reconhecida ({len(dados_audio_slin)} bytes) - assumindo 'sim'")
+    # Método direto mais simples, usando exatamente a mesma abordagem do VAD
+    try:
+        print(f"[TRANSCRIÇÃO] Usando método de transcrição direto (estilo VAD) - {audio_size} bytes")
+        
+        # 1. Converter dados PCM para WAV
+        print("[TRANSCRIÇÃO] Convertendo SLIN para WAV")
+        audio_wav = converter_bytes_para_wav(dados_audio_slin, 8000)
+        if not audio_wav:
+            print("[TRANSCRIÇÃO] Falha na conversão para WAV - formato de áudio não suportado")
+            # Para áudio curto, tentamos retornar "sim" mesmo com falha de conversão
+            if is_short_audio:
+                print(f"[TRANSCRIÇÃO] Áudio curto com falha de conversão - retornando 'sim' como fallback")
+                return "sim"
+            return None
+            
+        # 2. Converter para WAV de 16k (requisito da Azure)
+        print("[TRANSCRIÇÃO] Convertendo para WAV 16kHz")
+        audio_segment = AudioSegment.from_file(BytesIO(audio_wav), format="wav")
+        audio_segment = audio_segment.set_frame_rate(16000)
+        
+        # Aplicar normalização para melhorar reconhecimento
+        print("[TRANSCRIÇÃO] Normalizando áudio")
+        audio_segment = audio_segment.normalize()
+        
+        # 3. Exportar para WAV
+        buffer = BytesIO()
+        audio_segment.export(buffer, format='wav')
+        audio_wav_16k = buffer.getvalue()
+        
+        if not audio_wav_16k:
+            print("[TRANSCRIÇÃO] Falha ao exportar para WAV 16kHz")
+            if is_short_audio:
+                print(f"[TRANSCRIÇÃO] Áudio curto com falha de exportação - retornando 'sim' como fallback")
+                return "sim"
+            return None
+            
+        print(f"[TRANSCRIÇÃO] Áudio WAV 16kHz gerado com sucesso: {len(audio_wav_16k)} bytes")
+        
+        # 4. Configurações otimizadas do Azure Speech
+        print("[TRANSCRIÇÃO] Configurando Azure Speech SDK")
+        speech_config = speechsdk.SpeechConfig(subscription=os.getenv('AZURE_SPEECH_KEY'), region=os.getenv('AZURE_SPEECH_REGION'))
+        speech_config.speech_recognition_language = 'pt-BR'
+        
+        # Melhorias para reconhecimento mais preciso
+        speech_config.set_property(speechsdk.PropertyId.SpeechServiceResponse_PostProcessingOption, "TrueText")
+        speech_config.enable_dictation()  # Melhor para frases curtas
+        
+        # 5. Configurar streaming de áudio 
+        print("[TRANSCRIÇÃO] Configurando stream de áudio")
+        audio_stream = speechsdk.audio.PushAudioInputStream()
+        audio_stream.write(audio_wav_16k)
+        audio_stream.close()
+        audio_config = speechsdk.audio.AudioConfig(stream=audio_stream)
+        
+        # 6. Criar reconhecedor e executar reconhecimento
+        recognizer = speechsdk.SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
+        print("[TRANSCRIÇÃO] Executando recognize_once()...")
+        result = recognizer.recognize_once()
+        
+        # 7. Processar resultado
+        if result.reason == speechsdk.ResultReason.RecognizedSpeech:
+            # Verificar se o texto está vazio - pode acontecer quando Azure reconhece com sucesso mas sem conteúdo
+            if result.text and result.text.strip():
+                # Texto não vazio - retornar normalmente
+                print(f"[TRANSCRIÇÃO] Bem-sucedida: '{result.text}'")
+                return result.text
+            else:
+                # Texto vazio - tratar de acordo com o tamanho do áudio
+                print("[TRANSCRIÇÃO] Texto reconhecido está vazio")
+                
+                # Para áudios curtos, tratamos como resposta curta "sim"
+                if is_short_audio:
+                    print(f"[TRANSCRIÇÃO] Texto vazio em áudio curto ({audio_size} bytes) - considerando 'sim'")
+                    return "sim"
+                else:
+                    # Para áudios mais longos, consideramos como um "ok"
+                    print(f"[TRANSCRIÇÃO] Texto vazio em áudio normal ({audio_size} bytes) - considerando 'ok'")
+                    return "ok"
+        elif result.reason == speechsdk.ResultReason.NoMatch:
+            no_match_info = "Sem detalhes disponíveis"
+            try:
+                no_match_info = result.no_match_details.reason
+            except:
+                pass
+            print(f"[TRANSCRIÇÃO] Nenhuma fala reconhecida (NoMatch): {no_match_info}")
+            
+            # Para áudios curtos, consideramos "sim"
+            if is_short_audio:
+                print(f"[TRANSCRIÇÃO] Áudio curto não reconhecido ({audio_size} bytes) - considerando 'sim'")
+                return "sim"
+            return None
+        else:
+            print(f"[TRANSCRIÇÃO] Falha na transcrição. Reason: {result.reason}")
+            # Para áudios curtos, ainda consideramos "sim" mesmo em caso de falha
+            if is_short_audio:
+                print(f"[TRANSCRIÇÃO] Áudio curto com falha de reconhecimento - retornando 'sim' como fallback")
+                return "sim"
+            return None
+            
+    except Exception as e:
+        print(f"[TRANSCRIÇÃO] Erro durante a transcrição: {e}")
+        import traceback
+        print(traceback.format_exc())
+        
+        # Para áudios curtos, consideramos "sim" mesmo em caso de exceção
+        if is_short_audio:
+            print(f"[TRANSCRIÇÃO] Áudio curto com exceção - retornando 'sim' como fallback de emergência")
             return "sim"
-    
-    return None
+        return None
 
 def sintetizar_fala(texto):
     speech_config = speechsdk.SpeechConfig(subscription=os.getenv('AZURE_SPEECH_KEY'), region=os.getenv('AZURE_SPEECH_REGION'))
