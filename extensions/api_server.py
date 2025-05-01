@@ -229,9 +229,18 @@ class APIServer:
                     "message": f"Writer não disponível para {call_id} ({role})"
                 }, status=500)
             
-            # Enviar KIND_HANGUP (0x00)
-            writer.write(struct.pack('>B H', 0x00, 0))
-            await writer.drain()
+            # Enviar KIND_HANGUP (0x00) com tratamento de erro
+            try:
+                writer.write(struct.pack('>B H', 0x00, 0))
+                await writer.drain()
+            except ConnectionResetError:
+                logger.info(f"Conexão já foi resetada durante envio de KIND_HANGUP para {call_id} ({role}) - comportamento normal")
+            except Exception as e:
+                logger.error(f"Erro ao enviar KIND_HANGUP para {call_id} ({role}): {e}")
+                return web.json_response({
+                    "status": "error",
+                    "message": f"Erro ao enviar KIND_HANGUP: {str(e)}"
+                }, status=500)
             
             # Definir flag para indicar teste de hangup na sessão
             session.intent_data["test_hangup"] = True

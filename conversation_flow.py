@@ -675,18 +675,28 @@ class ConversationFlow:
                 # Enviar KIND_HANGUP para o visitante
                 visitor_conn = resource_manager.get_active_connection(session_id, "visitor")
                 if visitor_conn and 'writer' in visitor_conn:
-                    logger.info(f"[Flow] Enviando KIND_HANGUP ativo para visitante na sessão {session_id}")
-                    visitor_conn['writer'].write(struct.pack('>B H', 0x00, 0))
-                    await visitor_conn['writer'].drain()
+                    try:
+                        logger.info(f"[Flow] Enviando KIND_HANGUP ativo para visitante na sessão {session_id}")
+                        visitor_conn['writer'].write(struct.pack('>B H', 0x00, 0))
+                        await visitor_conn['writer'].drain()
+                    except ConnectionResetError:
+                        logger.info(f"[Flow] Conexão do visitante já foi resetada durante envio de KIND_HANGUP - comportamento normal")
+                    except Exception as e:
+                        logger.warning(f"[Flow] Erro ao enviar KIND_HANGUP para visitante: {e}")
                 else:
                     logger.warning(f"[Flow] Conexão do visitante não encontrada para enviar KIND_HANGUP na sessão {session_id}")
                 
                 # Enviar KIND_HANGUP para o morador (se existir conexão)
                 resident_conn = resource_manager.get_active_connection(session_id, "resident")
                 if resident_conn and 'writer' in resident_conn:
-                    logger.info(f"[Flow] Enviando KIND_HANGUP ativo para morador na sessão {session_id}")
-                    resident_conn['writer'].write(struct.pack('>B H', 0x00, 0))
-                    await resident_conn['writer'].drain()
+                    try:
+                        logger.info(f"[Flow] Enviando KIND_HANGUP ativo para morador na sessão {session_id}")
+                        resident_conn['writer'].write(struct.pack('>B H', 0x00, 0))
+                        await resident_conn['writer'].drain()
+                    except ConnectionResetError:
+                        logger.info(f"[Flow] Conexão do morador já foi resetada durante envio de KIND_HANGUP - comportamento normal")
+                    except Exception as e:
+                        logger.warning(f"[Flow] Erro ao enviar KIND_HANGUP para morador: {e}")
                 
                 # Após enviar os KIND_HANGUP, aguardar um pouco e finalizar a sessão completamente
                 await asyncio.sleep(1.0)

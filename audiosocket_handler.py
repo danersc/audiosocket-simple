@@ -627,8 +627,22 @@ async def iniciar_servidor_audiosocket_visitante(reader, writer):
     # Remover logger para liberar recursos
     CallLoggerManager.remove_logger(call_id)
     
-    writer.close()
-    await writer.wait_closed()
+    # Tratar fechamento do socket com robustez para lidar com desconexões abruptas
+    try:
+        writer.close()
+        # Usar um timeout para wait_closed para evitar bloqueio indefinido 
+        # em caso de desconexão súbita (Connection reset by peer)
+        await asyncio.wait_for(writer.wait_closed(), timeout=2.0)
+    except asyncio.TimeoutError:
+        logger.info(f"[{call_id}] Timeout ao aguardar fechamento do socket - provavelmente já foi fechado pelo cliente")
+    except ConnectionResetError:
+        # Isso é esperado se o cliente desconectar abruptamente após receber KIND_HANGUP
+        logger.info(f"[{call_id}] Conexão resetada pelo cliente após KIND_HANGUP - comportamento normal")
+    except Exception as e:
+        # Capturar qualquer outro erro durante o fechamento da conexão
+        logger.warning(f"[{call_id}] Erro ao fechar conexão: {str(e)}")
+    
+    logger.info(f"[{call_id}] Socket encerrado e liberado para novas conexões")
 
 
 # ------------------------
@@ -1051,11 +1065,25 @@ async def iniciar_servidor_audiosocket_morador(reader, writer):
     # Remover conexão do ResourceManager
     resource_manager.unregister_connection(call_id, "resident")
 
-    writer.close()
-    await writer.wait_closed()
+    # Tratar fechamento do socket com robustez para lidar com desconexões abruptas
+    try:
+        writer.close()
+        # Usar um timeout para wait_closed para evitar bloqueio indefinido 
+        # em caso de desconexão súbita (Connection reset by peer)
+        await asyncio.wait_for(writer.wait_closed(), timeout=2.0)
+    except asyncio.TimeoutError:
+        logger.info(f"[{call_id}] Timeout ao aguardar fechamento do socket do morador - provavelmente já foi fechado pelo cliente")
+    except ConnectionResetError:
+        # Isso é esperado se o cliente desconectar abruptamente após receber KIND_HANGUP
+        logger.info(f"[{call_id}] Conexão do morador resetada pelo cliente após KIND_HANGUP - comportamento normal")
+    except Exception as e:
+        # Capturar qualquer outro erro durante o fechamento da conexão
+        logger.warning(f"[{call_id}] Erro ao fechar conexão do morador: {str(e)}")
     
     logger.info(f"[{call_id}] Conexão do morador encerrada.")
     call_logger.log_call_ended("resident_connection_closed", call_duration)
     
     # Remover logger para liberar recursos
     CallLoggerManager.remove_logger(call_id)
+    
+    logger.info(f"[{call_id}] Socket do morador encerrado e liberado para novas conexões")
