@@ -531,18 +531,30 @@ async def receber_audio_visitante_azure_speech(reader: asyncio.StreamReader, cal
     if hasattr(speechsdk, 'ProfanityOption'):
         speech_config.set_profanity(speechsdk.ProfanityOption.Raw)
     
-    # Criar o stream de áudio (PCM 16-bit a 8kHz)
-    push_stream = speechsdk.audio.PushAudioInputStream(
-        stream_format=speechsdk.audio.AudioStreamFormat(
-            samples_per_second=8000, 
-            bits_per_sample=16,
-            channels=1
-        )
+    # Criar o stream de áudio (PCM 16-bit a 8kHz) - SLIN formato
+    # Configuração explícita e completa para garantir que o Azure Speech entenda corretamente o formato
+    audio_format = speechsdk.audio.AudioStreamFormat(
+        samples_per_second=8000,  # Crucialmente importante: 8kHz para SLIN
+        bits_per_sample=16,       # 16-bit PCM
+        channels=1                # mono
     )
+    
+    # Log detalhado do formato para debug
+    logger.info(f"[{call_id}] Configurando formato de áudio: 8kHz, 16-bit, mono (SLIN)")
+    
+    # Criar o stream com o formato explícito
+    push_stream = speechsdk.audio.PushAudioInputStream(stream_format=audio_format)
     audio_config = speechsdk.audio.AudioConfig(stream=push_stream)
     
-    # Criar o reconhecedor
+    # Adicionar parâmetros extras de segmentação
+    if hasattr(speechsdk.PropertyId, "Speech_SegmentationStrategy"):
+        # Configurar estratégia de segmentação manual para melhor controle
+        speech_config.set_property(speechsdk.PropertyId.Speech_SegmentationStrategy, "ManualOnly")
+        logger.info(f"[{call_id}] Estratégia de segmentação configurada para: ManualOnly")
+    
+    # Criar o reconhecedor com o formato de áudio explícito configurado
     recognizer = speechsdk.SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
+    logger.info(f"[{call_id}] Reconhecedor de fala iniciado com formato SLIN 8kHz")
     
     # Controle simplificado de reconhecimento
     is_recognition_started = False
@@ -1231,18 +1243,30 @@ async def receber_audio_morador_azure_speech(reader: asyncio.StreamReader, call_
     if hasattr(speechsdk, 'ProfanityOption'):
         speech_config.set_profanity(speechsdk.ProfanityOption.Raw)
     
-    # Criar o stream de áudio (PCM 16-bit a 8kHz)
-    push_stream = speechsdk.audio.PushAudioInputStream(
-        stream_format=speechsdk.audio.AudioStreamFormat(
-            samples_per_second=8000, 
-            bits_per_sample=16,
-            channels=1
-        )
+    # Criar o stream de áudio (PCM 16-bit a 8kHz) - SLIN formato
+    # Configuração explícita e completa para garantir que o Azure Speech entenda corretamente o formato
+    audio_format = speechsdk.audio.AudioStreamFormat(
+        samples_per_second=8000,  # Crucialmente importante: 8kHz para SLIN
+        bits_per_sample=16,       # 16-bit PCM
+        channels=1                # mono
     )
+    
+    # Log detalhado do formato para debug
+    logger.info(f"[{call_id}] Configurando formato de áudio: 8kHz, 16-bit, mono (SLIN)")
+    
+    # Criar o stream com o formato explícito
+    push_stream = speechsdk.audio.PushAudioInputStream(stream_format=audio_format)
     audio_config = speechsdk.audio.AudioConfig(stream=push_stream)
     
-    # Criar o reconhecedor
+    # Adicionar parâmetros extras de segmentação
+    if hasattr(speechsdk.PropertyId, "Speech_SegmentationStrategy"):
+        # Configurar estratégia de segmentação manual para melhor controle
+        speech_config.set_property(speechsdk.PropertyId.Speech_SegmentationStrategy, "ManualOnly")
+        logger.info(f"[{call_id}] Estratégia de segmentação configurada para: ManualOnly")
+    
+    # Criar o reconhecedor com o formato de áudio explícito configurado
     recognizer = speechsdk.SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
+    logger.info(f"[{call_id}] Reconhecedor de fala iniciado com formato SLIN 8kHz")
     
     # Controle simplificado de reconhecimento
     is_recognition_started = False

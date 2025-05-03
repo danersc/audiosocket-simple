@@ -64,9 +64,15 @@ class SpeechCallbacks:
         """Callback quando a fala é reconhecida completamente."""
         role = "visitante" if self.is_visitor else "morador"
         
-        # Log do evento
+        # Log detalhado do evento
         logger.info(f"[{self.call_id}] Evento on_recognized disparado! Reason: {evt.result.reason}, Buffer: {len(self.audio_buffer)} frames")
         
+        # Verificar e registrar propriedades do resultado para diagnóstico
+        if hasattr(evt.result, 'properties'):
+            properties = evt.result.properties
+            if properties:
+                logger.info(f"[{self.call_id}] Propriedades do resultado: {properties}")
+            
         if evt.result.reason == speechsdk.ResultReason.RecognizedSpeech:
             # Fala foi reconhecida com sucesso
             logger.info(f"[{self.call_id}] Azure Speech reconheceu texto do {role}: '{evt.result.text}'")
@@ -95,6 +101,24 @@ class SpeechCallbacks:
                     logger.error(f"[{self.call_id}] Processo_callback não definido! Não é possível processar texto reconhecido")
             else:
                 logger.warning(f"[{self.call_id}] Texto reconhecido, mas sem dados de áudio para processar")
+                
+                # Tentar salvar arquivo de diagnóstico vazio
+                try:
+                    import os
+                    import hashlib
+                    
+                    debug_dir = os.path.join("audio", "debug")
+                    os.makedirs(debug_dir, exist_ok=True)
+                    
+                    file_hash = hashlib.md5(f"{self.call_id}_empty_recognized".encode()).hexdigest()[:16]
+                    file_path = os.path.join(debug_dir, f"{file_hash}_empty_{role}.txt")
+                    
+                    with open(file_path, "w") as f:
+                        f.write(f"Evento recognized com texto '{text_to_process}' mas buffer vazio.")
+                    
+                    logger.info(f"[{self.call_id}] Diagnóstico salvo: {file_path}")
+                except Exception as e:
+                    logger.error(f"[{self.call_id}] Erro ao salvar diagnóstico: {e}")
             
             # Limpar buffer e preparar para próxima fala
             self.audio_buffer = []
@@ -102,8 +126,14 @@ class SpeechCallbacks:
             self.speech_detected = False
         
         elif evt.result.reason == speechsdk.ResultReason.NoMatch:
+            # IMPORTANTE: Tratamento explícito do caso NoMatch (quando o Azure detecta fala mas não consegue transcrever)
+            logger.info(f"[{self.call_id}] Azure Speech NoMatch. Detalhes: {evt.result.no_match_details if hasattr(evt.result, 'no_match_details') else 'N/A'}")
+            
             # Verificar se temos um áudio curto do morador que pode ser uma resposta rápida
             is_short_audio = not self.is_visitor and len(self.audio_buffer) > 0 and len(self.audio_buffer) < 20
+            
+            # Verificar se temos áudio disponível para processar mesmo sem reconhecimento
+            have_audio = len(self.audio_buffer) > 0
             
             if is_short_audio:
                 # Morador com fala curta (possível "sim" ou "não")
@@ -115,15 +145,52 @@ class SpeechCallbacks:
                 if self.process_callback:
                     loop = asyncio.get_event_loop()
                     future = asyncio.run_coroutine_threadsafe(
-                        self.process_callback("sim", audio_data),  # Aqui usamos "sim" como valor padrão para áudios curtos
+                        self.process_callback("sim", audio_data),  # Usamos "sim" como valor padrão para áudios curtos
                         loop
                     )
                     future.add_done_callback(lambda f: 
                         logger.info(f"[{self.call_id}] Processamento de áudio curto concluído com sucesso") if not f.exception() 
                         else logger.error(f"[{self.call_id}] Erro no processamento de áudio curto: {f.exception()}")
                     )
+            elif have_audio:
+                # Temos áudio mas não foi reconhecido - salvar para diagnóstico
+                audio_data = b"".join(self.audio_buffer)
+                audio_size = len(audio_data)
+                
+                # Salvar o áudio para análise
+                try:
+                    import os
+                    import hashlib
+                    import time
+                    
+                    debug_dir = os.path.join("audio", "debug")
+                    os.makedirs(debug_dir, exist_ok=True)
+                    
+                    timestamp = int(time.time())
+                    file_hash = hashlib.md5(f"{self.call_id}_{timestamp}_nomatch".encode()).hexdigest()[:16]
+                    file_path = os.path.join(debug_dir, f"{file_hash}_nomatch_{role}.slin")
+                    
+                    with open(file_path, "wb") as f:
+                        f.write(audio_data)
+                    
+                    logger.info(f"[{self.call_id}] Áudio não reconhecido (NoMatch) salvo: {file_path} ({audio_size} bytes)")
+                except Exception as e:
+                    logger.error(f"[{self.call_id}] Erro ao salvar áudio NoMatch: {e}")
+                
+                # Mesmo com NoMatch, tentar processar o áudio
+                if self.process_callback:
+                    logger.info(f"[{self.call_id}] Tentando processar áudio mesmo com NoMatch: {audio_size} bytes")
+                    loop = asyncio.get_event_loop()
+                    future = asyncio.run_coroutine_threadsafe(
+                        self.process_callback("", audio_data),  # Texto vazio para processamento alternativo
+                        loop
+                    )
+                    future.add_done_callback(lambda f: 
+                        logger.info(f"[{self.call_id}] Processamento de NoMatch concluído com sucesso") if not f.exception() 
+                        else logger.error(f"[{self.call_id}] Erro no processamento de NoMatch: {f.exception()}")
+                    )
             else:
-                logger.info(f"[{self.call_id}] Azure Speech não reconheceu fala (NoMatch)")
+                logger.info(f"[{self.call_id}] Azure Speech não reconheceu fala (NoMatch) e buffer está vazio")
             
             # Limpar buffer e resetar estado
             self.audio_buffer = []
