@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import socket
 import azure.cognitiveservices.speech as speechsdk
 from azure_speech_callbacks import SpeechCallbacks
 import os
@@ -8,23 +7,30 @@ import os
 SAMPLE_RATE = 8000
 CHANNELS = 1
 CHUNK_SIZE = 320
+DEBUG_DIR = "audio/debug"
+os.makedirs(DEBUG_DIR, exist_ok=True)
 
 logger = logging.getLogger(__name__)
 
 
 async def iniciar_servidor_audiosocket_visitante(reader, writer):
-    speech_config = speechsdk.SpeechConfig(subscription=os.getenv("AZURE_SPEECH_KEY"),
-                                           region=os.getenv("AZURE_SPEECH_REGION"))
+    speech_config = speechsdk.SpeechConfig(
+        subscription=os.getenv("AZURE_SPEECH_KEY"),
+        region=os.getenv("AZURE_SPEECH_REGION")
+    )
     speech_config.speech_recognition_language = "pt-BR"
 
-    audio_format = speechsdk.audio.AudioStreamFormat(samples_per_second=SAMPLE_RATE,
-                                                     bits_per_sample=16,
-                                                     channels=CHANNELS)
+    audio_format = speechsdk.audio.AudioStreamFormat(
+        samples_per_second=SAMPLE_RATE,
+        bits_per_sample=16,
+        channels=CHANNELS
+    )
     push_stream = speechsdk.audio.PushAudioInputStream(audio_format)
     audio_config = speechsdk.audio.AudioConfig(stream=push_stream)
 
     recognizer = speechsdk.SpeechRecognizer(speech_config, audio_config)
-    callbacks = SpeechCallbacks(call_id="visitante_test")
+
+    callbacks = SpeechCallbacks(call_id="visitante_test", audio_format=audio_format)
     callbacks.register_callbacks(recognizer)
 
     recognizer.start_continuous_recognition_async()
@@ -35,16 +41,18 @@ async def iniciar_servidor_audiosocket_visitante(reader, writer):
             if not data:
                 break
             push_stream.write(data)
+            callbacks.add_audio_chunk(data)  # adiciona chunks ao buffer para debug
 
     except Exception as e:
         logger.error(f"Erro ao receber dados: {e}")
     finally:
         push_stream.close()
         recognizer.stop_continuous_recognition_async()
+        await writer.wait_closed()
 
 
 async def iniciar_servidor_audiosocket_morador(reader, writer):
-    print("Conexão recebida do morador (ignorada nesta versão de teste).")
+    logger.info("Conexão recebida do morador (ignorada nesta versão de teste).")
     writer.close()
     await writer.wait_closed()
 
