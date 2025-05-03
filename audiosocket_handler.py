@@ -56,7 +56,7 @@ async def iniciar_servidor_audiosocket_visitante(reader, writer):
     session = session_manager.create_session(session_id)
     session_manager.enfileirar_visitor(session_id, "Olá, seja bem-vindo! Por favor, informe seu nome e apartamento.")
 
-    callbacks = SpeechCallbacks(call_id=session_id)
+    callbacks = SpeechCallbacks(call_id=session_id, session_manager=session_manager)
     callbacks.register_callbacks(recognizer)
 
     recognizer.start_continuous_recognition_async()
