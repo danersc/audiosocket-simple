@@ -671,11 +671,26 @@ async def receber_audio_visitante_azure_speech(reader: asyncio.StreamReader, cal
                 if not is_recognition_started:
                     is_recognition_started = True
                 
-                # Sempre enviar o áudio para o Azure Speech
+                # Sempre enviar o áudio para o Azure Speech e também para o buffer local
                 try:
+                    # Enviar para Azure Speech primeiro
                     push_stream.write(audio_chunk)
+                    
+                    # Adicionar ao buffer local através do callback
+                    # Importante: Isso garante que o áudio seja armazenado mesmo se o Azure não ativar a coleta
+                    speech_callbacks.add_audio_chunk(audio_chunk)
+                    
+                    # Log para verificar tamanho do buffer a cada 20 chunks
+                    if hasattr(speech_callbacks, 'audio_buffer') and len(speech_callbacks.audio_buffer) % 20 == 0:
+                        logger.info(f"[{call_id}] Buffer de áudio: {len(speech_callbacks.audio_buffer)} chunks (~{len(speech_callbacks.audio_buffer)*20}ms)")
+                        
+                    # Verificar status de detecção e coleta
+                    if hasattr(speech_callbacks, 'speech_detected') and speech_callbacks.speech_detected and not speech_callbacks.collecting_audio:
+                        # Forçar coleta se detecção de fala está ativa mas coleta não
+                        speech_callbacks.collecting_audio = True
+                        logger.info(f"[{call_id}] Forçando coleta de áudio com speech_detected={speech_callbacks.speech_detected}")
                 except Exception as e:
-                    logger.error(f"[{call_id}] Erro ao enviar áudio para Azure Speech: {e}")
+                    logger.error(f"[{call_id}] Erro ao processar áudio: {e}")
             
             elif kind != KIND_SLIN or (len(audio_chunk) != 320 and len(audio_chunk) != 640):
                 logger.warning(f"[{call_id}] Chunk inválido do visitante. kind={kind}, len={len(audio_chunk)}")
@@ -1203,6 +1218,9 @@ async def receber_audio_morador_azure_speech(reader: asyncio.StreamReader, call_
     speech_config.set_property(speechsdk.PropertyId.SpeechServiceResponse_PostProcessingOption, "TrueText")
     
     # A propriedade Speech_VoiceDetectionSensitivity não existe, não vamos configurá-la
+    # Ajuste para detectar respostas curtas
+    speech_config.set_property(speechsdk.PropertyId.Speech_SegmentationSilenceTimeoutMs, str(resident_timeout_ms))
+    speech_config.set_property(speechsdk.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, str(resident_timeout_ms))
     
     # Configurações para melhor qualidade e precisão
     # Verificar se o método existe antes de chamar para evitar erros

@@ -43,11 +43,18 @@ class SpeechCallbacks:
         self.audio_buffer: List[bytes] = []
         self.speech_detected = False
         
-        # Timestamp do último áudio recebido da IA (para evitar eco)
+        # Timestamps para cálculos de duração e controle de eco
         self.last_ia_audio_time = 0
+        self.speech_start_time = None
+        
+        # Contadores para diagnóstico
+        self.chunks_received = 0
+        self.chunks_collected = 0
         
         # Função de processamento a ser definida pelo chamador
         self.process_callback: Optional[Callable] = None
+        
+        logger.info(f"[{self.call_id}] Inicializando SpeechCallbacks para {'visitante' if is_visitor else 'morador'}")
     
     def set_process_callback(self, callback: Callable[[str, bytes], Any]):
         """Define a função de callback para processar texto reconhecido."""
@@ -150,13 +157,16 @@ class SpeechCallbacks:
         if self.call_logger:
             self.call_logger.log_speech_detected(is_visitor=self.is_visitor)
         
-        # Iniciar coleta de áudio
+        # Resetar buffer antes de iniciar nova coleta
+        # Isso evita misturar áudio de eventos diferentes
+        self.audio_buffer = []
+        
+        # Iniciar coleta de áudio - essencial para que o add_audio_chunk funcione
         self.collecting_audio = True
         self.speech_detected = True
         
-        # Inicializar buffer se necessário
-        if not hasattr(self, 'audio_buffer') or self.audio_buffer is None:
-            self.audio_buffer = []
+        # Registrar tempo de início para cálculo de duração
+        self.speech_start_time = time.time()
     
     def on_speech_end_detected(self, evt):
         """Callback quando o fim de fala é detectado."""
@@ -198,21 +208,39 @@ class SpeechCallbacks:
     def add_audio_chunk(self, chunk: bytes):
         """
         Adiciona um chunk de áudio ao buffer.
-        Versão simplificada que confia mais no Azure Speech para detecção.
+        Versão simplificada que confia mais no Azure Speech para detecção, mas com
+        melhorias para garantir que o áudio seja capturado corretamente.
         
         Returns:
             True se o áudio estiver sendo coletado, False caso contrário
         """
+        # Incrementar contador total de chunks recebidos para diagnóstico
+        self.chunks_received += 1
+        
         # Verificação básica do chunk
         if not chunk or len(chunk) == 0:
             return False
         
+        # MELHORIA PRINCIPAL: Sempre coletar áudio quando estiver no modo de detecção de fala
+        # ou quando a coleta já estiver ativa - isso garante que não perdemos partes do áudio
+        if self.speech_detected:
+            # Se fala foi detectada mas a coleta ainda não está ativa, ativar
+            if not self.collecting_audio:
+                logger.info(f"[{self.call_id}] Ativando coleta de áudio após detecção de fala")
+                self.collecting_audio = True
+        
         # Se estamos coletando, adicionar ao buffer
         if self.collecting_audio:
             self.audio_buffer.append(chunk)
+            self.chunks_collected += 1
+            
+            # Log para informar status do buffer periodicamente
+            if len(self.audio_buffer) % 20 == 0:  # Log a cada 20 chunks
+                buffer_duration_ms = len(self.audio_buffer) * 20  # Aproximadamente 20ms por chunk
+                logger.info(f"[{self.call_id}] Buffer de áudio: {len(self.audio_buffer)} chunks (~{buffer_duration_ms}ms)")
             
             # Limitar tamanho do buffer para evitar estouro de memória
-            max_buffer_size = 1000  # ~20 segundos de áudio
+            max_buffer_size = 1500  # ~30 segundos de áudio
             if len(self.audio_buffer) > max_buffer_size:
                 # Remover os frames mais antigos
                 excess = len(self.audio_buffer) - max_buffer_size
@@ -220,6 +248,11 @@ class SpeechCallbacks:
                 logger.warning(f"[{self.call_id}] Buffer limitado a {max_buffer_size} frames, removendo {excess} frames antigos")
             
             return True
+        
+        # Estatísticas de diagnóstico ocasionais
+        if self.chunks_received % 100 == 0:
+            collection_rate = (self.chunks_collected / self.chunks_received) * 100 if self.chunks_received > 0 else 0
+            logger.debug(f"[{self.call_id}] Estatísticas: {self.chunks_collected}/{self.chunks_received} chunks coletados ({collection_rate:.1f}%)")
         
         return False
     
