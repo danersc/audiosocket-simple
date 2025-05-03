@@ -61,12 +61,6 @@ try:
         
         # Configuração de detecção de voz (webrtcvad ou azure_speech)
         VOICE_DETECTION_TYPE = VoiceDetectionType(config['system'].get('voice_detection_type', 'webrtcvad'))
-        # Configuração para testes
-        TEST_MODE = config.get('testing', {}).get('enabled', False)
-        TEST_AUDIO_FILE = config.get('testing', {}).get('test_audio_file', None)
-        if TEST_MODE and TEST_AUDIO_FILE:
-            logger.info(f"Modo de teste ativado com arquivo: {TEST_AUDIO_FILE}")
-    
         # Configurações específicas para Azure Speech
         AZURE_SPEECH_SEGMENT_TIMEOUT_MS = config['system'].get('azure_speech_segment_timeout_ms', 800)
         
@@ -442,34 +436,6 @@ async def receber_audio_visitante_vad(reader: asyncio.StreamReader, call_id: str
                             
                             audio_data = b"".join(frames)
                             frames.clear()
-                            # Se estamos em modo de teste e temos um arquivo de teste
-                            if 'TEST_MODE' in globals() and TEST_MODE and TEST_AUDIO_FILE:
-                                try:
-                                    # Carregar o arquivo de teste
-                                    test_file_path = TEST_AUDIO_FILE
-                                    if not os.path.isabs(test_file_path):
-                                        # Se for um nome de arquivo, procurar no diretório de cache
-                                        test_file_path = os.path.join('audio/cache', test_file_path)
-                                        
-                                    logger.info(f"[{call_id}] Modo de teste: usando arquivo {test_file_path}")
-                                    with open(test_file_path, 'rb') as f:
-                                        test_audio_data = f.read()
-                                        
-                                    # Substituir o áudio capturado pelo arquivo de teste
-                                    audio_data = test_audio_data
-                                    logger.info(f"[{call_id}] Áudio de teste carregado: {len(audio_data)} bytes")
-                                    
-                                    # Log para o call_logger
-                                    call_logger.log_event("TEST_AUDIO_LOADED", {
-                                        "file": test_file_path,
-                                        "size": len(audio_data)
-                                    })
-                                except Exception as e:
-                                    logger.error(f"[{call_id}] Erro ao carregar arquivo de teste: {e}")
-                                    call_logger.log_error("TEST_AUDIO_LOAD_FAILED", 
-                                                        f"Erro ao carregar arquivo de teste", 
-                                                        {"error": str(e)})
-    
 
                             # Desativar escuta durante processamento para evitar retroalimentação
                             is_listening_mode = False
