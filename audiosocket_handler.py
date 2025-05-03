@@ -483,15 +483,12 @@ async def receber_audio_visitante_vad(reader: asyncio.StreamReader, call_id: str
 
 async def receber_audio_visitante_azure_speech(reader: asyncio.StreamReader, call_id: str):
     """
-    Implementação usando Azure Speech SDK para detecção de voz e silêncio.
+    Implementação simplificada usando Azure Speech SDK para detecção de voz e silêncio.
     
-    Esta implementação usa o Azure Speech SDK para detectar início e fim da fala
-    com melhor resistência a ruídos de fundo.
+    Esta implementação confia mais nos recursos nativos do Azure Speech SDK
+    para detecção de fala em ambientes ruidosos, com mínima interferência local.
     """
     call_logger = CallLoggerManager.get_logger(call_id)
-    
-    # Para controlar se estamos no modo de escuta ativa
-    is_listening_mode = True
     
     # Acessar a sessão para verificar o estado
     session = session_manager.get_session(call_id)
@@ -499,7 +496,7 @@ async def receber_audio_visitante_azure_speech(reader: asyncio.StreamReader, cal
         logger.error(f"[{call_id}] Sessão não encontrada para iniciar recebimento de áudio")
         return
     
-    # Flag de buffer para descartar áudio residual após IA falar
+    # Flag para descartar frames iniciais após a IA falar (anti-eco)
     discard_buffer_frames = 0
     
     # Verificar se as variáveis de ambiente necessárias estão definidas
@@ -507,154 +504,114 @@ async def receber_audio_visitante_azure_speech(reader: asyncio.StreamReader, cal
     azure_region = os.getenv('AZURE_SPEECH_REGION')
     
     if not azure_key or not azure_region:
-        logger.error(f"[{call_id}] Variáveis de ambiente AZURE_SPEECH_KEY e/ou AZURE_SPEECH_REGION não configuradas!")
-        logger.error(f"[{call_id}] AZURE_SPEECH_KEY: {azure_key and 'Configurada' or 'NÃO CONFIGURADA!'}")
-        logger.error(f"[{call_id}] AZURE_SPEECH_REGION: {azure_region and 'Configurada' or 'NÃO CONFIGURADA!'}")
+        logger.error(f"[{call_id}] Credenciais do Azure Speech não configuradas. Verifique as variáveis de ambiente.")
+        return
     
     # Configurações do Azure Speech SDK
     speech_config = speechsdk.SpeechConfig(
         subscription=azure_key,
-        region=azure_region or "eastus"  # Valor de fallback se não estiver configurado
+        region=azure_region
     )
     speech_config.speech_recognition_language = 'pt-BR'
     
-    # Log para debug
-    logger.info(f"[{call_id}] Configuração Azure Speech: Language=pt-BR, Subscription={azure_key and '****' + azure_key[-4:] or 'NÃO CONFIGURADA'}, Region={azure_region or 'NÃO CONFIGURADA'}")
+    # Configurações otimizadas para detecção em ambientes ruidosos
+    visitor_timeout_ms = config["system"].get("azure_speech_visitor_timeout_ms", 1000)
+    speech_config.set_property(speechsdk.PropertyId.Speech_SegmentationSilenceTimeoutMs, str(visitor_timeout_ms))
+    speech_config.set_property(speechsdk.PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs, "10000")
+    speech_config.set_property(speechsdk.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, str(visitor_timeout_ms))
+    speech_config.set_property(speechsdk.PropertyId.SpeechServiceResponse_PostProcessingOption, "TrueText")
+    # Speech_VoiceDetectionSensitivity não existe, vamos remover essa linha
     
-    # Configurações importantes para o reconhecimento de fala
-    # Ajuste o timeout de silêncio para segmentação - valor vem da configuração
-    speech_config.set_property(speechsdk.PropertyId.Speech_SegmentationSilenceTimeoutMs, 
-                              str(AZURE_SPEECH_SEGMENT_TIMEOUT_MS))
+    # Configurações para melhor qualidade e precisão
+    # Verificar se o método existe antes de chamar para evitar erros
+    if hasattr(speech_config, 'enable_audio_logging'):
+        speech_config.enable_audio_logging()
+    if hasattr(speech_config, 'enable_dictation'):
+        speech_config.enable_dictation()
+    if hasattr(speechsdk, 'ProfanityOption'):
+        speech_config.set_profanity(speechsdk.ProfanityOption.Raw)
     
-    # Configurações adicionais para melhorar o reconhecimento - valores mais agressivos
-    speech_config.set_property(speechsdk.PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs, "8000")   # 8 segundos para timeout inicial
-    speech_config.set_property(speechsdk.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "500")       # 0.5 segundos de silêncio para encerrar
-    speech_config.set_property(speechsdk.PropertyId.SpeechServiceResponse_PostProcessingOption, "TrueText")   # Melhor reconhecimento de texto
-    
-    # Configurações para qualidade e reconhecimento melhorados
-    speech_config.enable_audio_logging()                                                # Habilita logging de áudio no Azure
-    speech_config.enable_dictation()                                                    # Habilita modo ditado (melhor para frases curtas)
-    speech_config.set_profanity(speechsdk.ProfanityOption.Raw)                          # Não filtra palavrões
-    
-    # Removendo propriedades não suportadas que causam erro
-    # speech_config.set_property("AdaptationInitialSilenceTimeoutMs", "1000")          
-    # speech_config.set_property("AdaptationEndSilenceTimeoutMs", "300")
-    
-    # Criar o stream de áudio para alimentar o reconhecedor
-    # Usar formato específico para áudio - SLIN é raw PCM 16-bit a 8kHz
-    push_stream = speechsdk.audio.PushAudioInputStream(stream_format=speechsdk.audio.AudioStreamFormat(samples_per_second=8000, 
-                                                                                                    bits_per_sample=16,
-                                                                                                    channels=1))
+    # Criar o stream de áudio (PCM 16-bit a 8kHz)
+    push_stream = speechsdk.audio.PushAudioInputStream(
+        stream_format=speechsdk.audio.AudioStreamFormat(
+            samples_per_second=8000, 
+            bits_per_sample=16,
+            channels=1
+        )
+    )
     audio_config = speechsdk.audio.AudioConfig(stream=push_stream)
     
     # Criar o reconhecedor
     recognizer = speechsdk.SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
     
-    # Flag para controlar loop de reconhecimento
-    recognizer_running = False
-    recognition_started = False
-    last_audio_time = time.time()
+    # Controle simplificado de reconhecimento
+    is_recognition_started = False
     
-    # Contadores para controle periódico
-    silence_check_counter = 0
-    frame_counter = 0
-    
-    # Função para processar texto reconhecido
+    # Função para processar texto reconhecido pelo Azure
     async def process_recognized_text(text, audio_data):
-        nonlocal is_listening_mode
-        
-        # Verificações de segurança para os dados de áudio
+        # Verificar se temos dados válidos para processar
         if not audio_data or len(audio_data) == 0:
-            logger.warning(f"[{call_id}] Recebido process_recognized_text com audio_data vazio - ignorando")
+            logger.warning(f"[{call_id}] Recebido texto sem áudio para processar")
             return
-        
-        # Desativar escuta durante processamento para evitar retroalimentação
-        is_listening_mode = False
         
         # Mudar estado para WAITING durante processamento
         session.visitor_state = "WAITING"
         
-        # Log antes da transcrição
+        # Log antes da transcrição/processamento
         audio_size = len(audio_data)
-        call_logger.log_transcription_start(audio_size, is_visitor=True)
-        logger.info(f"[{call_id}] Iniciando transcrição/processamento de {audio_size} bytes de áudio")
+        call_logger.log_event("PROCESSING_VISITOR_AUDIO", {
+            "audio_size": audio_size,
+            "text_from_azure": text if text else "(sem texto)"
+        })
         
-        # Se o Azure Speech já transcreveu, usamos esse texto
+        # Se o Azure Speech transcreveu com sucesso, usar o texto diretamente
         if text and text.strip():
-            logger.info(f"[{call_id}] Usando texto já reconhecido pelo Azure: '{text}'")
-            call_logger.log_transcription_complete(text, 0, is_visitor=True)
+            logger.info(f"[{call_id}] Texto reconhecido pelo Azure: '{text}'")
             
-            # Medição do tempo de processamento da IA
+            # Processar o texto reconhecido
             start_time = time.time()
             session_manager.process_visitor_text(call_id, text)
-            ai_processing_time = (time.time() - start_time) * 1000
+            processing_time = (time.time() - start_time) * 1000
             
             call_logger.log_event("VISITOR_PROCESSING_COMPLETE", {
                 "text": text,
-                "processing_time_ms": round(ai_processing_time, 2)
+                "processing_time_ms": round(processing_time, 2),
+                "source": "azure_speech"
             })
         else:
-            # Caso o Azure Speech não tenha retornado texto, tentamos transcrever normalmente
-            # Isso pode acontecer para falas muito curtas ou quando o evento foi forçado
+            # Se não temos texto, tentar transcrição com nosso método
+            logger.info(f"[{call_id}] Azure não retornou texto, tentando transcrição alternativa para {audio_size} bytes")
             
-            # Verificar se o áudio é muito curto - poderia ser um "sim" rápido
-            is_short_audio = audio_size < 8000  # ~0.5 segundo de áudio
-            if is_short_audio:
-                logger.info(f"[{call_id}] Áudio muito curto ({audio_size} bytes) - possível 'sim'")
-            
-            # Transcrever usando o método padrão
             start_time = time.time()
             texto = await transcrever_audio_async(audio_data, call_id=call_id)
             transcription_time = (time.time() - start_time) * 1000
             
             if texto:
-                logger.info(f"[{call_id}] Áudio transcrito com sucesso: '{texto}' em {transcription_time:.1f}ms")
-                call_logger.log_transcription_complete(texto, transcription_time, is_visitor=True)
+                logger.info(f"[{call_id}] Áudio transcrito: '{texto}' em {transcription_time:.1f}ms")
                 
-                # Medição do tempo de processamento da IA
+                # Processar o texto transcrito
                 start_time = time.time()
                 session_manager.process_visitor_text(call_id, texto)
-                ai_processing_time = (time.time() - start_time) * 1000
+                processing_time = (time.time() - start_time) * 1000
                 
                 call_logger.log_event("VISITOR_PROCESSING_COMPLETE", {
                     "text": texto,
-                    "processing_time_ms": round(ai_processing_time, 2)
+                    "processing_time_ms": round(processing_time, 2),
+                    "source": "fallback_transcription"
                 })
             else:
-                # Se for um áudio curto e a transcrição falhou, podemos tentar considerar como "sim"
-                if is_short_audio:
-                    logger.info(f"[{call_id}] Áudio curto não transcrito - interpretando como resposta curta")
-                    texto = "sim"  # Assumir resposta curta afirmativa
-                    
-                    # Processar mesmo sem transcrição bem-sucedida
-                    start_time = time.time()
-                    session_manager.process_visitor_text(call_id, texto)
-                    ai_processing_time = (time.time() - start_time) * 1000
-                    
-                    call_logger.log_event("VISITOR_PROCESSING_COMPLETE", {
-                        "text": texto,
-                        "processing_time_ms": round(ai_processing_time, 2),
-                        "note": "Áudio curto não transcrito - assumido resposta curta"
-                    })
-                else:
-                    # Transcricão falhou para áudio de tamanho normal
-                    logger.error(f"[{call_id}] Falha ao transcrever {audio_size} bytes de áudio")
-                    call_logger.log_error("TRANSCRIPTION_FAILED", 
-                                        "Falha ao transcrever áudio do visitante", 
-                                        {"audio_size": audio_size})
-                    # Voltar ao modo de escuta, já que não conseguimos processar o áudio
-                    is_listening_mode = True
+                logger.error(f"[{call_id}] Falha na transcrição do áudio ({audio_size} bytes)")
+                call_logger.log_error("TRANSCRIPTION_FAILED", 
+                                      "Falha ao transcrever áudio do visitante", 
+                                      {"audio_size": audio_size})
     
-    # Criar gerenciador de callbacks do Azure Speech
+    # Criar e configurar o gerenciador de callbacks
     speech_callbacks = SpeechCallbacks(call_id, is_visitor=True, call_logger=call_logger)
     speech_callbacks.set_process_callback(process_recognized_text)
-    
-    # Registrar callbacks com o recognizer
     speech_callbacks.register_callbacks(recognizer)
     
-    # Inicia o reconhecimento contínuo e aguarda o início da sessão
+    # Iniciar o reconhecimento contínuo
     recognizer.start_continuous_recognition_async()
-    recognizer_running = True
     logger.info(f"[{call_id}] Iniciado reconhecimento contínuo com Azure Speech")
     
     try:
@@ -662,25 +619,22 @@ async def receber_audio_visitante_azure_speech(reader: asyncio.StreamReader, cal
             # Verificar sinal de terminação
             if session.terminate_visitor_event.is_set():
                 logger.info(f"[{call_id}] Detectado sinal para encerrar recebimento de áudio do visitante")
-                call_logger.log_event("TERMINATE_VISITOR_AUDIO", {
-                    "reason": "session_terminated",
-                    "timestamp": time.time()
-                })
+                call_logger.log_event("TERMINATE_VISITOR_AUDIO", {"reason": "session_terminated"})
                 break
             
             try:
-                # Uso de wait_for com timeout para permitir verificação de terminação
+                # Uso de wait_for com timeout para permitir verificação periódica de terminação
                 header = await asyncio.wait_for(reader.readexactly(3), timeout=0.5)
             except asyncio.TimeoutError:
-                # Timeout apenas para verificação de terminação, continuamos normalmente
+                # Timeout apenas para verificação, continuamos normalmente
                 continue
             except asyncio.IncompleteReadError:
-                logger.info(f"[{call_id}] Visitante desconectou (EOF).")
+                logger.info(f"[{call_id}] Visitante desconectou (EOF)")
                 call_logger.log_call_ended("visitor_disconnected")
                 break
 
             if not header:
-                logger.info(f"[{call_id}] Nenhum dado de header, encerrando.")
+                logger.info(f"[{call_id}] Nenhum dado de header, encerrando")
                 call_logger.log_call_ended("invalid_header")
                 break
 
@@ -692,329 +646,47 @@ async def receber_audio_visitante_azure_speech(reader: asyncio.StreamReader, cal
             # Verificar o estado atual da sessão
             current_state = session.visitor_state
             
-            # Se estamos em IA_TURN, significa que a IA está falando - não devemos processar áudio
+            # Se a IA está falando, não processamos o áudio
             if current_state == "IA_TURN":
-                is_listening_mode = False
-                continue  # Pula processamento durante fala da IA
+                # Marcar que a IA acabou de enviar áudio para evitar eco
+                if hasattr(speech_callbacks, 'mark_ia_audio_sent'):
+                    speech_callbacks.mark_ia_audio_sent()
+                continue
                 
             # Período de transição: após IA falar, descartamos alguns frames para evitar eco
             if discard_buffer_frames > 0:
                 discard_buffer_frames -= 1
                 continue
                 
-            # Se acabamos de transitar de IA_TURN para USER_TURN, ativamos modo de escuta
-            if not is_listening_mode and current_state == "USER_TURN":
-                is_listening_mode = True
-                discard_buffer_frames = DISCARD_BUFFER_FRAMES  # Descartar quadros para evitar eco
-                logger.debug(f"[{call_id}] Ativando modo de escuta de visitante")
-                call_logger.log_event("LISTENING_MODE_ACTIVATED", {"timestamp": time.time()})
+            # Se acabamos de transitar de IA_TURN para USER_TURN, preparamos para escuta
+            if current_state == "USER_TURN" and not is_recognition_started:
+                discard_buffer_frames = DISCARD_BUFFER_FRAMES
+                is_recognition_started = True
+                logger.debug(f"[{call_id}] Ativando escuta do visitante")
                 continue
 
-            # Processamos o áudio apenas quando estamos em modo de escuta
-            if is_listening_mode and kind == KIND_SLIN and (len(audio_chunk) == 320 or len(audio_chunk) == 640):
+            # Processar apenas chunks de áudio válidos
+            if kind == KIND_SLIN and (len(audio_chunk) == 320 or len(audio_chunk) == 640):
+                # Iniciar reconhecimento se ainda não começou
+                if not is_recognition_started:
+                    is_recognition_started = True
+                
+                # Sempre enviar o áudio para o Azure Speech
                 try:
-                    # Guardar o formato original do áudio para diagnóstico
-                    original_audio_size = len(audio_chunk)
-                    
-                    # Mantenha o formato original para aumentar chance de compatibilidade
-                    # O microfone_client.py envia 640 bytes (320 samples * 2 bytes/sample)
-                    # Importante: NÃO modifique o formato do áudio, deixe como está
-                    chunk_to_process = audio_chunk
-                    
-                    # Log para analisar formato dos dados a cada ~10s
-                    if frame_counter % 500 == 0:
-                        # Exibir primeiros bytes como hex para debug
-                        try:
-                            hex_representation = " ".join(f"{b:02x}" for b in audio_chunk[:16])
-                            logger.info(f"[{call_id}] Formato do áudio: tamanho={len(audio_chunk)}, primeiros bytes={hex_representation}")
-                        except:
-                            pass
-                    
-                    # Enviar áudio para o Azure Speech e guardar no buffer
-                    if recognition_started:
-                        # Sempre adicionar ao buffer para garantir que temos o áudio completo
-                        speech_callbacks.add_audio_chunk(audio_chunk)
-                        
-                        # Enviar para o push_stream para processamento em tempo real
-                        try:
-                            # Enviar o chunk inteiro sem modificação
-                            push_stream.write(audio_chunk)
-                            
-                            # A cada 200 frames enviar um marcador de debug
-                            if frame_counter % 200 == 0:
-                                logger.info(f"[{call_id}] Enviado {frame_counter} frames para Azure Speech")
-                        except Exception as e:
-                            logger.error(f"[{call_id}] Erro ao enviar áudio para push_stream: {e}")
-                        last_audio_time = time.time()
-                        
-                        # Incrementar contadores
-                        frame_counter += 1
-                        
-                        # Verificar se estamos em um longo período de silêncio (sem speech_detected)
-                        # Isso serve como failsafe se o Azure Speech não disparar os eventos corretamente
-                        silence_check_counter += 1
-                        
-                        # A cada 100 frames (~2 segundos), verifique se temos um silêncio prolongado
-                        if silence_check_counter >= 100:
-                            silence_check_counter = 0
-                            current_time = time.time()
-                            
-                            # Log para debug do estado atual
-                            buffer_size = len(speech_callbacks.audio_buffer) if hasattr(speech_callbacks, 'audio_buffer') else 0
-                            logger.info(f"[{call_id}] Estado da detecção: coletando={speech_callbacks.is_collecting()}, detectou_fala={speech_callbacks.speech_detected}, buffer_size={buffer_size}, último_áudio={current_time - last_audio_time:.1f}s atrás")
-                            
-                            # Sempre forçamos o processamento periodicamente, compatível com método VAD
-                            force_processing = False  # Por padrão, avaliamos condições específicas
-                            reason = "verificação periódica de áudio"
-                            
-                            # Se temos silêncio prolongado, buffer grande ou fala detectada com silêncio, processar
-                            if speech_callbacks.is_collecting() and (current_time - last_audio_time) > 2.0:
-                                force_processing = True
-                                reason = f"silêncio prolongado de {current_time - last_audio_time:.1f}s"
-                            elif speech_callbacks.speech_detected and (current_time - last_audio_time) > 1.5:
-                                force_processing = True
-                                reason = "fala detectada com silêncio de 1.5s"
-                            elif buffer_size > 50:
-                                force_processing = True
-                                reason = f"buffer grande ({buffer_size} frames)"
-                            # Verificação extra: Se temos uma quantidade razoável de áudio após um período sem processamento
-                            elif buffer_size > 10 and (current_time - last_audio_time) > 3.0:
-                                force_processing = True
-                                reason = f"buffer médio ({buffer_size} frames) com {current_time - last_audio_time:.1f}s sem processamento"
-                            # Failsafe: Processar periodicamente para garantir que nada fique preso
-                            elif (frame_counter % 1000 == 0) and buffer_size > 5:  # A cada ~20 segundos se tiver pelo menos alguns frames
-                                force_processing = True
-                                reason = f"verificação periódica preventiva (a cada ~20s) - buffer={buffer_size} frames"
-                            
-                            # IMPORTANTE: Verificações de segurança para casos de falha do Azure Speech
-                            
-                            # Caso 0: Verificar timeout de reconhecimento pendente
-                            if hasattr(speech_callbacks, 'timeout_check_needed') and speech_callbacks.timeout_check_needed:
-                                current_time = time.time()
-                                timeout_time = speech_callbacks.timeout_check_time if hasattr(speech_callbacks, 'timeout_check_time') else (current_time - 1)
-                                
-                                if current_time >= timeout_time:
-                                    logger.info(f"[{call_id}] Verificando timeout de reconhecimento pendente")
-                                    
-                                    # Limpar flag para evitar reprocessamento
-                                    speech_callbacks.timeout_check_needed = False
-                                    
-                                    # Verificar se existem dados no buffer
-                                    if hasattr(speech_callbacks, 'audio_buffer') and len(speech_callbacks.audio_buffer) > 0:
-                                        # Processar áudio do buffer
-                                        audio_data = b"".join(speech_callbacks.audio_buffer)
-                                        speech_callbacks.audio_buffer = []
-                                        speech_callbacks.collecting_audio = False
-                                        speech_callbacks.speech_detected = False
-                                        
-                                        logger.info(f"[{call_id}] Processando {len(audio_data)} bytes de áudio após timeout")
-                                        
-                                        # Desativar escuta durante processamento
-                                        is_listening_mode = False
-                                        
-                                        # Mudar estado para WAITING durante processamento
-                                        session.visitor_state = "WAITING"
-                                        
-                                        # Log antes da transcrição
-                                        call_logger.log_transcription_start(len(audio_data), is_visitor=True)
-                                        
-                                        # Transcrever com medição de tempo
-                                        start_time = time.time()
-                                        texto = await transcrever_audio_async(audio_data, call_id=call_id)
-                                        transcription_time = (time.time() - start_time) * 1000
-                                        
-                                        if texto:
-                                            call_logger.log_transcription_complete(texto, transcription_time, is_visitor=True)
-                                            
-                                            # Processar texto com IA
-                                            start_time = time.time()
-                                            session_manager.process_visitor_text(call_id, texto)
-                                            ai_processing_time = (time.time() - start_time) * 1000
-                                            
-                                            call_logger.log_event("VISITOR_PROCESSING_COMPLETE", {
-                                                "text": texto,
-                                                "processing_time_ms": round(ai_processing_time, 2),
-                                                "source": "timeout_check"
-                                            })
-                                        else:
-                                            logger.error(f"[{call_id}] Falha ao transcrever áudio de timeout ({len(audio_data)} bytes)")
-                                            call_logger.log_error("TRANSCRIPTION_FAILED", 
-                                                          "Falha ao transcrever áudio de timeout do visitante", 
-                                                          {"audio_size": len(audio_data)})
-                                            is_listening_mode = True
-                                        
-                                        # Continuar para próximo ciclo
-                                        continue
-                                    else:
-                                        logger.info(f"[{call_id}] Timeout de reconhecimento, mas buffer está vazio - nada a processar")
-                            
-                            # Caso 1: Verificar se há buffer grande com fala detectada (possivelmente preso)
-                            if hasattr(speech_callbacks, 'long_buffer_flag') and speech_callbacks.long_buffer_flag and \
-                               hasattr(speech_callbacks, 'audio_buffer') and len(speech_callbacks.audio_buffer) > 0:
-                                logger.warning(f"[{call_id}] Detectado buffer grande ({len(speech_callbacks.audio_buffer)} frames) com fala em andamento - forçando processamento")
-                                
-                                # Limpar flag para evitar reprocessamento
-                                speech_callbacks.long_buffer_flag = False
-                                
-                                # Forçar o mesmo comportamento que ocorreria no fim da fala
-                                audio_data = b"".join(speech_callbacks.audio_buffer)
-                                speech_callbacks.audio_buffer = []
-                                speech_callbacks.collecting_audio = False
-                                
-                                # Desativar escuta durante processamento
-                                is_listening_mode = False
-                                
-                                # Mudar estado para WAITING durante processamento
-                                session.visitor_state = "WAITING"
-                                
-                                # Log antes da transcrição
-                                call_logger.log_transcription_start(len(audio_data), is_visitor=True)
-                                logger.info(f"[{call_id}] Processando {len(audio_data)} bytes de áudio de buffer grande")
-                                
-                                # Transcrever diretamente
-                                start_time = time.time()
-                                texto = await transcrever_audio_async(audio_data, call_id=call_id)
-                                transcription_time = (time.time() - start_time) * 1000
-                                
-                                if texto:
-                                    call_logger.log_transcription_complete(texto, transcription_time, is_visitor=True)
-                                    
-                                    # Processamento de IA
-                                    start_time = time.time()
-                                    session_manager.process_visitor_text(call_id, texto)
-                                    ai_processing_time = (time.time() - start_time) * 1000
-                                    
-                                    call_logger.log_event("VISITOR_PROCESSING_COMPLETE", {
-                                        "text": texto,
-                                        "processing_time_ms": round(ai_processing_time, 2),
-                                        "source": "buffer_large"
-                                    })
-                                else:
-                                    logger.error(f"[{call_id}] Falha ao transcrever buffer grande de {len(audio_data)} bytes")
-                                    call_logger.log_error("TRANSCRIPTION_FAILED", 
-                                                    "Falha ao transcrever buffer grande do visitante", 
-                                                    {"audio_size": len(audio_data)})
-                                    # Volta ao modo de escuta
-                                    is_listening_mode = True
-                                
-                                # Continuar para próximo ciclo
-                                continue
-                            
-                            # Caso 2: Verificar se há dados pendentes do callback para processar
-                            # Este é o método mais seguro para processar dados detectados pelo Azure Speech
-                            if hasattr(speech_callbacks, 'pending_processing_flag') and speech_callbacks.pending_processing_flag:
-                                if hasattr(speech_callbacks, 'pending_audio_for_processing') and speech_callbacks.pending_audio_for_processing:
-                                    # Usar os dados pendentes e limpar a flag
-                                    audio_data = speech_callbacks.pending_audio_for_processing
-                                    speech_callbacks.pending_processing_flag = False
-                                    speech_callbacks.pending_audio_for_processing = None
-                                    
-                                    logger.info(f"[{call_id}] Processando {len(audio_data)} bytes de áudio pendente do callback")
-                                    
-                                    # Desativar escuta durante processamento
-                                    is_listening_mode = False
-                                    
-                                    # Mudar estado para WAITING durante processamento
-                                    session.visitor_state = "WAITING"
-                                    
-                                    # Log antes da transcrição
-                                    call_logger.log_transcription_start(len(audio_data), is_visitor=True)
-                                    
-                                    # Transcrever com medição de tempo e monitoramento
-                                    start_time = time.time()
-                                    texto = await transcrever_audio_async(audio_data, call_id=call_id)
-                                    transcription_time = (time.time() - start_time) * 1000
-                                    
-                                    if texto:
-                                        call_logger.log_transcription_complete(texto, transcription_time, is_visitor=True)
-                                        
-                                        # Medição do tempo de processamento da IA
-                                        start_time = time.time()
-                                        session_manager.process_visitor_text(call_id, texto)
-                                        ai_processing_time = (time.time() - start_time) * 1000
-                                        
-                                        call_logger.log_event("VISITOR_PROCESSING_COMPLETE", {
-                                            "text": texto,
-                                            "processing_time_ms": round(ai_processing_time, 2),
-                                            "source": "pending_audio"
-                                        })
-                                    else:
-                                        call_logger.log_error("TRANSCRIPTION_FAILED", 
-                                                          "Falha ao transcrever áudio pendente do visitante", 
-                                                          {"audio_size": len(audio_data)})
-                                        # Voltar ao modo de escuta, já que não conseguimos processar o áudio
-                                        is_listening_mode = True
-                                        
-                                    # Ignoramos o processamento normal neste ciclo, pois já processamos os dados pendentes
-                                    continue
-                            
-                            # Forçar processamento usando exatamente o mesmo método do VAD
-                            if force_processing and buffer_size > 0:
-                                logger.info(f"[{call_id}] Forçando processamento de áudio: {reason}")
-                                
-                                # Copiar exatamente o mesmo código de receber_audio_visitante_vad
-                                # para garantir compatibilidade de processamento
-                                audio_data = b"".join(speech_callbacks.audio_buffer)
-                                speech_callbacks.audio_buffer = []
-                                speech_callbacks.collecting_audio = False
-                                speech_callbacks.speech_detected = False
-                                
-                                # Desativar escuta durante processamento
-                                is_listening_mode = False
-                                
-                                # Mudar estado para WAITING durante processamento
-                                session.visitor_state = "WAITING"
-                                
-                                # Log antes da transcrição
-                                call_logger.log_transcription_start(len(audio_data), is_visitor=True)
-                                
-                                # Transcrever com medição de tempo e monitoramento
-                                start_time = time.time()
-                                texto = await transcrever_audio_async(audio_data, call_id=call_id)
-                                transcription_time = (time.time() - start_time) * 1000
-                                
-                                if texto:
-                                    call_logger.log_transcription_complete(texto, transcription_time, is_visitor=True)
-                                    
-                                    # Medição do tempo de processamento da IA
-                                    start_time = time.time()
-                                    session_manager.process_visitor_text(call_id, texto)
-                                    ai_processing_time = (time.time() - start_time) * 1000
-                                    
-                                    call_logger.log_event("VISITOR_PROCESSING_COMPLETE", {
-                                        "text": texto,
-                                        "processing_time_ms": round(ai_processing_time, 2)
-                                    })
-                                else:
-                                    call_logger.log_error("TRANSCRIPTION_FAILED", 
-                                                        "Falha ao transcrever áudio do visitante", 
-                                                        {"audio_size": len(audio_data)})
-                                    # Voltar ao modo de escuta, já que não conseguimos processar o áudio
-                                    is_listening_mode = True
-                    else:
-                        # Iniciar reconhecimento na primeira vez que recebemos áudio
-                        recognition_started = True
-                        push_stream.write(chunk_to_process)
-                        
-                        # Também adicionamos ao buffer para capturar início da fala
-                        speech_callbacks.add_audio_chunk(audio_chunk)
-                        
-                        last_audio_time = time.time()
-                        logger.info(f"[{call_id}] Primeiro áudio enviado para Azure Speech ({original_audio_size} bytes)")
+                    push_stream.write(audio_chunk)
                 except Exception as e:
-                    logger.error(f"[{call_id}] Erro ao processar áudio para Azure Speech: {e}", exc_info=True)
+                    logger.error(f"[{call_id}] Erro ao enviar áudio para Azure Speech: {e}")
             
             elif kind != KIND_SLIN or (len(audio_chunk) != 320 and len(audio_chunk) != 640):
                 logger.warning(f"[{call_id}] Chunk inválido do visitante. kind={kind}, len={len(audio_chunk)}")
                 call_logger.log_error("INVALID_CHUNK", 
-                                    "Chunk de áudio inválido recebido do visitante", 
-                                    {"kind": kind, "length": len(audio_chunk)})
+                                     "Chunk de áudio inválido recebido do visitante", 
+                                     {"kind": kind, "length": len(audio_chunk)})
     
     finally:
         # Finalizar o reconhecedor
-        if recognizer_running:
-            logger.info(f"[{call_id}] Parando reconhecimento contínuo com Azure Speech")
-            recognizer.stop_continuous_recognition_async()
+        logger.info(f"[{call_id}] Parando reconhecimento contínuo com Azure Speech")
+        recognizer.stop_continuous_recognition_async()
         
     # Ao sair, encerrou a conexão
     logger.info(f"[{call_id}] receber_audio_visitante_azure_speech terminou.")
@@ -1492,16 +1164,12 @@ async def receber_audio_morador_vad(reader: asyncio.StreamReader, call_id: str):
 
 async def receber_audio_morador_azure_speech(reader: asyncio.StreamReader, call_id: str):
     """
-    Implementação usando Azure Speech SDK para detecção de voz e silêncio para o morador.
+    Implementação simplificada usando Azure Speech SDK para detecção de voz do morador.
     
-    Esta implementação usa o Azure Speech SDK para detectar início e fim da fala
-    com melhor resistência a ruídos de fundo e otimizada para respostas curtas do morador.
-    Segue o mesmo fluxo de verificação e finalização do receber_audio_morador_vad.
+    Otimizada para respostas curtas como "sim" e "não", esta implementação confia mais
+    nos recursos nativos do Azure Speech para detecção de fala com mínima interferência local.
     """
     call_logger = CallLoggerManager.get_logger(call_id)
-    
-    # Para controlar se estamos no modo de escuta ativa
-    is_listening_mode = True
     
     # Acessar a sessão para verificar o estado
     session = session_manager.get_session(call_id)
@@ -1509,7 +1177,7 @@ async def receber_audio_morador_azure_speech(reader: asyncio.StreamReader, call_
         logger.error(f"[{call_id}] Sessão não encontrada para iniciar recebimento de áudio do morador")
         return
     
-    # Flag de buffer para descartar áudio residual após IA falar
+    # Flag para descartar frames iniciais após a IA falar (anti-eco)
     discard_buffer_frames = 0
     
     # Verificar se as variáveis de ambiente necessárias estão definidas
@@ -1517,126 +1185,118 @@ async def receber_audio_morador_azure_speech(reader: asyncio.StreamReader, call_
     azure_region = os.getenv('AZURE_SPEECH_REGION')
     
     if not azure_key or not azure_region:
-        logger.error(f"[{call_id}] Variáveis de ambiente AZURE_SPEECH_KEY e/ou AZURE_SPEECH_REGION não configuradas!")
-        logger.error(f"[{call_id}] AZURE_SPEECH_KEY: {azure_key and 'Configurada' or 'NÃO CONFIGURADA!'}")
-        logger.error(f"[{call_id}] AZURE_SPEECH_REGION: {azure_region and 'Configurada' or 'NÃO CONFIGURADA!'}")
+        logger.error(f"[{call_id}] Credenciais do Azure Speech não configuradas. Verifique as variáveis de ambiente.")
+        return
     
     # Configurações do Azure Speech SDK
     speech_config = speechsdk.SpeechConfig(
         subscription=azure_key,
-        region=azure_region or "eastus"  # Valor de fallback se não estiver configurado
+        region=azure_region
     )
     speech_config.speech_recognition_language = 'pt-BR'
     
-    # Log para debug
-    logger.info(f"[{call_id}] Configuração Azure Speech para morador: Language=pt-BR, Subscription={azure_key and '****' + azure_key[-4:] or 'NÃO CONFIGURADA'}, Region={azure_region or 'NÃO CONFIGURADA'}")
+    # Configurações otimizadas para detecção de respostas curtas do morador
+    resident_timeout_ms = config["system"].get("azure_speech_resident_timeout_ms", 600)
+    speech_config.set_property(speechsdk.PropertyId.Speech_SegmentationSilenceTimeoutMs, str(resident_timeout_ms))
+    speech_config.set_property(speechsdk.PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs, "10000")
+    speech_config.set_property(speechsdk.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, str(resident_timeout_ms))
+    speech_config.set_property(speechsdk.PropertyId.SpeechServiceResponse_PostProcessingOption, "TrueText")
     
-    # Ajuste o timeout de silêncio para segmentação - valor mais curto que o do visitante
-    # Usamos um valor mais curto para capturar mais rapidamente respostas como "sim"
-    speech_config.set_property(speechsdk.PropertyId.Speech_SegmentationSilenceTimeoutMs, 
-                              str(AZURE_SPEECH_SEGMENT_TIMEOUT_MS - 100))  # 100ms mais curto que o padrão
+    # A propriedade Speech_VoiceDetectionSensitivity não existe, não vamos configurá-la
     
-    # Configurações adicionais para melhorar o reconhecimento - valores mais agressivos
-    speech_config.set_property(speechsdk.PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs, "5000")   # 5 segundos para timeout inicial
-    speech_config.set_property(speechsdk.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "300")       # 0.3 segundos de silêncio para encerrar
-    speech_config.set_property(speechsdk.PropertyId.SpeechServiceResponse_PostProcessingOption, "TrueText")   # Melhor reconhecimento de texto
+    # Configurações para melhor qualidade e precisão
+    # Verificar se o método existe antes de chamar para evitar erros
+    if hasattr(speech_config, 'enable_audio_logging'):
+        speech_config.enable_audio_logging()
+    if hasattr(speech_config, 'enable_dictation'):
+        speech_config.enable_dictation()
+    if hasattr(speechsdk, 'ProfanityOption'):
+        speech_config.set_profanity(speechsdk.ProfanityOption.Raw)
     
-    # Configurações para qualidade e reconhecimento melhorados - otimizadas para respostas curtas
-    speech_config.enable_audio_logging()                                                # Habilita logging de áudio no Azure
-    speech_config.enable_dictation()                                                    # Habilita modo ditado (melhor para frases curtas)
-    speech_config.set_profanity(speechsdk.ProfanityOption.Raw)                          # Não filtra palavrões
-    
-    # Removendo propriedades não suportadas que causam erro
-    # speech_config.set_property("AdaptationInitialSilenceTimeoutMs", "800")
-    # speech_config.set_property("AdaptationEndSilenceTimeoutMs", "200")
-    
-    # Criar o stream de áudio para alimentar o reconhecedor
-    # Usar formato específico para áudio - SLIN é raw PCM 16-bit a 8kHz
-    push_stream = speechsdk.audio.PushAudioInputStream(stream_format=speechsdk.audio.AudioStreamFormat(samples_per_second=8000, 
-                                                                                                    bits_per_sample=16,
-                                                                                                    channels=1))
+    # Criar o stream de áudio (PCM 16-bit a 8kHz)
+    push_stream = speechsdk.audio.PushAudioInputStream(
+        stream_format=speechsdk.audio.AudioStreamFormat(
+            samples_per_second=8000, 
+            bits_per_sample=16,
+            channels=1
+        )
+    )
     audio_config = speechsdk.audio.AudioConfig(stream=push_stream)
     
     # Criar o reconhecedor
     recognizer = speechsdk.SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
     
-    # Flag para controlar loop de reconhecimento
-    recognizer_running = False
-    recognition_started = False
-    last_audio_time = time.time()
+    # Controle simplificado de reconhecimento
+    is_recognition_started = False
     
-    # Função para processar texto reconhecido
+    # Função para processar texto reconhecido pelo Azure
     async def process_recognized_text(text, audio_data):
-        nonlocal is_listening_mode
-        
-        # Verificações de segurança para os dados de áudio
+        # Verificar se temos dados válidos para processar
         if not audio_data or len(audio_data) == 0:
-            logger.warning(f"[{call_id}] Recebido process_recognized_text com audio_data vazio - ignorando")
+            logger.warning(f"[{call_id}] Recebido texto sem áudio do morador para processar")
             return
-        
-        # Desativar escuta durante processamento para evitar retroalimentação
-        is_listening_mode = False
         
         # Mudar estado para WAITING durante processamento
         session.resident_state = "WAITING"
         
-        # Log antes da transcrição
+        # Log antes da transcrição/processamento
         audio_size = len(audio_data)
-        call_logger.log_transcription_start(audio_size, is_visitor=False)
-        logger.info(f"[{call_id}] Iniciando transcrição/processamento de {audio_size} bytes de áudio do morador")
+        call_logger.log_event("PROCESSING_RESIDENT_AUDIO", {
+            "audio_size": audio_size,
+            "text_from_azure": text if text else "(sem texto)"
+        })
         
-        # Se o Azure Speech já transcreveu, usamos esse texto
+        # Otimização para respostas curtas do morador
+        is_short_audio = audio_size < 8000  # ~0.5 segundo
+        
+        # Se o Azure Speech transcreveu com sucesso, usar o texto diretamente
         if text and text.strip():
-            logger.info(f"[{call_id}] Usando texto do morador já reconhecido pelo Azure: '{text}'")
-            call_logger.log_transcription_complete(text, 0, is_visitor=False)
+            text = text.lower()  # Normalizar para comparação
+            logger.info(f"[{call_id}] Texto reconhecido do morador: '{text}'")
             
-            # Medição do tempo de processamento
+            # Verificar se é uma resposta comum ("sim", "não", etc.)
+            common_responses = ["sim", "não", "nao", "ok", "pode", "liberado", "autorizado"]
+            if any(resp in text for resp in common_responses):
+                logger.info(f"[{call_id}] Resposta comum do morador detectada: '{text}'")
+            
+            # Processar o texto reconhecido
             start_time = time.time()
             session_manager.process_resident_text(call_id, text)
             processing_time = (time.time() - start_time) * 1000
             
             call_logger.log_event("RESIDENT_PROCESSING_COMPLETE", {
                 "text": text,
-                "processing_time_ms": round(processing_time, 2)
+                "processing_time_ms": round(processing_time, 2),
+                "source": "azure_speech"
             })
-            
-            logger.info(f"[{call_id}] Resposta do morador processada: '{text}'")
         else:
-            # Caso o Azure Speech não tenha retornado texto, tentamos transcrever normalmente
-            # Isso é essencial para o morador onde respostas curtas como "sim" são importantes
-            
-            # Verificar se o áudio é muito curto - poderia ser um "sim" rápido
-            is_short_audio = audio_size < 8000  # ~0.5 segundo de áudio
+            # Se não temos texto mas temos áudio curto, provavelmente é uma resposta rápida como "sim"
             if is_short_audio:
-                logger.info(f"[{call_id}] Áudio do morador muito curto ({audio_size} bytes) - possível 'sim'")
-            
-            # Transcrever usando o método padrão
-            start_time = time.time()
-            texto = await transcrever_audio_async(audio_data, call_id=call_id)
-            transcription_time = (time.time() - start_time) * 1000
-            
-            if texto:
-                logger.info(f"[{call_id}] Áudio do morador transcrito com sucesso: '{texto}' em {transcription_time:.1f}ms")
-                call_logger.log_transcription_complete(texto, transcription_time, is_visitor=False)
+                logger.info(f"[{call_id}] Áudio curto do morador ({audio_size} bytes) - considerando como 'sim'")
+                texto = "sim"  # Resposta padrão para áudios curtos do morador
                 
-                # Medição do tempo de processamento
+                # Processar o texto presumido
                 start_time = time.time()
                 session_manager.process_resident_text(call_id, texto)
                 processing_time = (time.time() - start_time) * 1000
                 
                 call_logger.log_event("RESIDENT_PROCESSING_COMPLETE", {
                     "text": texto,
-                    "processing_time_ms": round(processing_time, 2)
+                    "processing_time_ms": round(processing_time, 2),
+                    "source": "short_audio_fallback"
                 })
-                
-                logger.info(f"[{call_id}] Resposta do morador processada: '{texto}'")
             else:
-                # Se for um áudio curto e a transcrição falhou, podemos tentar considerar como "sim"
-                if is_short_audio:
-                    logger.info(f"[{call_id}] Áudio curto do morador não transcrito - interpretando como 'sim'")
-                    texto = "sim"  # Assumir resposta curta afirmativa
+                # Para áudios mais longos, tentar transcrição alternativa
+                logger.info(f"[{call_id}] Tentando transcrição alternativa para {audio_size} bytes de áudio do morador")
+                
+                start_time = time.time()
+                texto = await transcrever_audio_async(audio_data, call_id=call_id)
+                transcription_time = (time.time() - start_time) * 1000
+                
+                if texto:
+                    logger.info(f"[{call_id}] Áudio do morador transcrito: '{texto}' em {transcription_time:.1f}ms")
                     
-                    # Processar mesmo sem transcrição bem-sucedida
+                    # Processar o texto transcrito
                     start_time = time.time()
                     session_manager.process_resident_text(call_id, texto)
                     processing_time = (time.time() - start_time) * 1000
@@ -1644,19 +1304,13 @@ async def receber_audio_morador_azure_speech(reader: asyncio.StreamReader, call_
                     call_logger.log_event("RESIDENT_PROCESSING_COMPLETE", {
                         "text": texto,
                         "processing_time_ms": round(processing_time, 2),
-                        "note": "Áudio curto não transcrito - assumido 'sim'"
+                        "source": "fallback_transcription"
                     })
-                    
-                    logger.info(f"[{call_id}] Resposta curta do morador assumida como '{texto}'")
                 else:
-                    # Transcricão falhou para áudio de tamanho normal
-                    logger.error(f"[{call_id}] Falha ao transcrever {audio_size} bytes de áudio do morador")
+                    logger.error(f"[{call_id}] Falha na transcrição do áudio do morador ({audio_size} bytes)")
                     call_logger.log_error("TRANSCRIPTION_FAILED", 
-                                       "Falha ao transcrever áudio do morador", 
-                                       {"audio_size": audio_size})
-                    # Voltar ao modo de escuta, já que não conseguimos processar o áudio
-                    is_listening_mode = True
-                    return
+                                         "Falha ao transcrever áudio do morador", 
+                                         {"audio_size": audio_size})
         
         # Verificar se a sessão tem flag de finalização após processamento
         session = session_manager.get_session(call_id)
@@ -1679,68 +1333,63 @@ async def receber_audio_morador_azure_speech(reader: asyncio.StreamReader, call_
                     else:
                         visitor_msg = "Ótima notícia! O morador autorizou sua entrada."
                     
-                    logger.info(f"[{call_id}] Notificando visitante explicitamente da autorização: {visitor_msg}")
+                    logger.info(f"[{call_id}] Notificando visitante sobre autorização: {visitor_msg}")
                     session_manager.enfileirar_visitor(call_id, visitor_msg)
                     
-                    # Forçar mensagem final - essencial para fechar o ciclo
+                    # Forçar mensagem final
                     final_msg = f"Sua {intent_type} foi autorizada pelo morador. Obrigado por utilizar nossa portaria inteligente."
                     session_manager.enfileirar_visitor(call_id, final_msg)
                     
-                    # Não finalizar a sessão imediatamente, permitir que as mensagens sejam enviadas
-                    # Agendamos um encerramento após um delay longo para garantir que todas as mensagens sejam ouvidas
-                    logger.info(f"[{call_id}] Agendando encerramento da sessão em 10 segundos após autorização do morador")
-                    asyncio.create_task(_encerrar_apos_delay(call_id, session_manager, 10.0))  # Delay mais longo para garantir processamento completo
+                    # Agendar encerramento após um delay para garantir que mensagens sejam ouvidas
+                    logger.info(f"[{call_id}] Agendando encerramento da sessão após autorização")
+                    asyncio.create_task(_encerrar_apos_delay(call_id, session_manager, 10.0))
                 elif authorization_result == "denied":
                     # Enviar mensagem explícita ao visitante sobre negação
-                    visitor_msg = f"Infelizmente o morador não autorizou sua {intent_type if intent_type else 'entrada'} neste momento."
-                    logger.info(f"[{call_id}] Notificando visitante explicitamente da negação: {visitor_msg}")
+                    visitor_msg = f"Infelizmente o morador não autorizou sua {intent_type if intent_type else 'entrada'}."
+                    logger.info(f"[{call_id}] Notificando visitante sobre negação: {visitor_msg}")
                     session_manager.enfileirar_visitor(call_id, visitor_msg)
                     
-                    # Forçar mensagem final - essencial para fechar o ciclo
-                    final_msg = f"Sua {intent_type} NÃO foi autorizada pelo morador. Obrigado por utilizar nossa portaria inteligente."
+                    # Forçar mensagem final
+                    final_msg = f"Sua {intent_type} não foi autorizada. Obrigado por utilizar nossa portaria inteligente."
                     session_manager.enfileirar_visitor(call_id, final_msg)
                     
-                    # Não finalizar a sessão imediatamente, permitir que as mensagens sejam enviadas
-                    # Agendamos um encerramento após um delay longo para garantir que todas as mensagens sejam ouvidas
-                    logger.info(f"[{call_id}] Agendando encerramento da sessão em 10 segundos após negação do morador")
-                    asyncio.create_task(_encerrar_apos_delay(call_id, session_manager, 10.0))  # Delay mais longo para garantir processamento completo
+                    # Agendar encerramento após um delay
+                    logger.info(f"[{call_id}] Agendando encerramento da sessão após negação")
+                    asyncio.create_task(_encerrar_apos_delay(call_id, session_manager, 10.0))
     
-    # Criar gerenciador de callbacks do Azure Speech
-    speech_callbacks = SpeechCallbacks(call_id, is_visitor=False, call_logger=call_logger)
-    speech_callbacks.set_process_callback(process_recognized_text)
+    # Criar e configurar o gerenciador de callbacks
+    resident_speech_callbacks = SpeechCallbacks(call_id, is_visitor=False, call_logger=call_logger)
+    resident_speech_callbacks.set_process_callback(process_recognized_text)
+    resident_speech_callbacks.register_callbacks(recognizer)
     
-    # Registrar callbacks com o recognizer
-    speech_callbacks.register_callbacks(recognizer)
+    # Salvar na sessão para acessar de outras partes do código
+    session.resident_speech_callbacks = resident_speech_callbacks
     
-    # Inicia o reconhecimento contínuo
+    # Iniciar o reconhecimento contínuo
     recognizer.start_continuous_recognition_async()
-    recognizer_running = True
-    logger.info(f"[{call_id}] Iniciado reconhecimento contínuo do morador com Azure Speech")
+    logger.info(f"[{call_id}] Iniciado reconhecimento contínuo com Azure Speech para morador")
     
     try:
         while True:
             # Verificar sinal de terminação
             if session.terminate_resident_event.is_set():
                 logger.info(f"[{call_id}] Detectado sinal para encerrar recebimento de áudio do morador")
-                call_logger.log_event("TERMINATE_RESIDENT_AUDIO", {
-                    "reason": "session_terminated",
-                    "timestamp": time.time()
-                })
+                call_logger.log_event("TERMINATE_RESIDENT_AUDIO", {"reason": "session_terminated"})
                 break
             
             try:
-                # Uso de wait_for com timeout para permitir verificação de terminação
+                # Uso de wait_for com timeout para permitir verificação periódica de terminação
                 header = await asyncio.wait_for(reader.readexactly(3), timeout=0.5)
             except asyncio.TimeoutError:
-                # Timeout apenas para verificação de terminação, continuamos normalmente
+                # Timeout apenas para verificação, continuamos normalmente
                 continue
             except asyncio.IncompleteReadError:
-                logger.info(f"[{call_id}] Morador desconectou (EOF).")
+                logger.info(f"[{call_id}] Morador desconectou (EOF)")
                 call_logger.log_call_ended("resident_disconnected")
                 break
 
             if not header:
-                logger.info(f"[{call_id}] Nenhum dado de header, encerrando (morador).")
+                logger.info(f"[{call_id}] Nenhum dado de header do morador, encerrando")
                 call_logger.log_call_ended("invalid_header_resident")
                 break
 
@@ -1752,62 +1401,47 @@ async def receber_audio_morador_azure_speech(reader: asyncio.StreamReader, call_
             # Verificar o estado atual da sessão
             current_state = session.resident_state
             
-            # Se estamos em IA_TURN, significa que a IA está falando com o morador - não processamos
+            # Se a IA está falando, não processamos o áudio
             if current_state == "IA_TURN":
-                is_listening_mode = False
-                continue  # Pula processamento durante fala da IA
+                # Marcar que a IA acabou de enviar áudio para evitar eco
+                if hasattr(resident_speech_callbacks, 'mark_ia_audio_sent'):
+                    resident_speech_callbacks.mark_ia_audio_sent()
+                continue
                 
             # Período de transição: após IA falar, descartamos alguns frames para evitar eco
             if discard_buffer_frames > 0:
                 discard_buffer_frames -= 1
                 continue
                 
-            # Se acabamos de transitar de IA_TURN para USER_TURN, ativamos modo de escuta
-            if not is_listening_mode and current_state == "USER_TURN":
-                is_listening_mode = True
-                discard_buffer_frames = DISCARD_BUFFER_FRAMES  # Descartar quadros para evitar eco
-                logger.debug(f"[{call_id}] Ativando modo de escuta de morador")
-                call_logger.log_event("RESIDENT_LISTENING_MODE_ACTIVATED", {"timestamp": time.time()})
+            # Se acabamos de transitar de IA_TURN para USER_TURN, preparamos para escuta
+            if current_state == "USER_TURN" and not is_recognition_started:
+                discard_buffer_frames = DISCARD_BUFFER_FRAMES
+                is_recognition_started = True
+                logger.debug(f"[{call_id}] Ativando escuta do morador")
                 continue
 
-            # Processamos o áudio apenas quando estamos em modo de escuta
-            if is_listening_mode and kind == KIND_SLIN and (len(audio_chunk) == 320 or len(audio_chunk) == 640):
+            # Processar apenas chunks de áudio válidos
+            if kind == KIND_SLIN and (len(audio_chunk) == 320 or len(audio_chunk) == 640):
+                # Iniciar reconhecimento se ainda não começou
+                if not is_recognition_started:
+                    is_recognition_started = True
+                
+                # Sempre enviar o áudio para o Azure Speech
                 try:
-                    # Enviar áudio para o Azure Speech
-                    if recognition_started:
-                        push_stream.write(audio_chunk)
-                        last_audio_time = time.time()
-                        
-                        # Sempre tentamos adicionar ao buffer, independente do estado atual
-                        # O método add_audio_chunk vai decidir se armazena no buffer principal ou no pre-buffer
-                        speech_callbacks.add_audio_chunk(audio_chunk)
-                        
-                        # Incrementar contador de frames
-                        frame_counter += 1
-                        
-                        # A cada 300 frames (~6 segundos), logamos o estado atual para debug
-                        if frame_counter % 300 == 0:
-                            logger.debug(f"[{call_id}] Estado do reconhecimento de morador: coletando={speech_callbacks.is_collecting()}, buffer_size={len(speech_callbacks.audio_buffer) if hasattr(speech_callbacks, 'audio_buffer') else 0}")
-                    else:
-                        # Iniciar reconhecimento na primeira vez que recebemos áudio
-                        recognition_started = True
-                        push_stream.write(audio_chunk)
-                        last_audio_time = time.time()
-                        logger.info(f"[{call_id}] Primeiro áudio do morador enviado para Azure Speech")
+                    push_stream.write(audio_chunk)
                 except Exception as e:
-                    logger.error(f"[{call_id}] Erro ao processar áudio para Azure Speech: {e}")
+                    logger.error(f"[{call_id}] Erro ao enviar áudio do morador para Azure Speech: {e}")
             
             elif kind != KIND_SLIN or (len(audio_chunk) != 320 and len(audio_chunk) != 640):
                 logger.warning(f"[{call_id}] Chunk inválido do morador. kind={kind}, len={len(audio_chunk)}")
                 call_logger.log_error("INVALID_CHUNK", 
-                                    "Chunk de áudio inválido recebido do morador", 
-                                    {"kind": kind, "length": len(audio_chunk)})
+                                     "Chunk de áudio inválido recebido do morador", 
+                                     {"kind": kind, "length": len(audio_chunk)})
     
     finally:
         # Finalizar o reconhecedor
-        if recognizer_running:
-            logger.info(f"[{call_id}] Parando reconhecimento contínuo do morador com Azure Speech")
-            recognizer.stop_continuous_recognition_async()
+        logger.info(f"[{call_id}] Parando reconhecimento contínuo com Azure Speech para morador")
+        recognizer.stop_continuous_recognition_async()
         
     # Ao sair, encerrou a conexão
     logger.info(f"[{call_id}] receber_audio_morador_azure_speech terminou.")
