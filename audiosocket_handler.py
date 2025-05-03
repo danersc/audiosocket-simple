@@ -11,7 +11,8 @@ import wave
 import uuid
 from session_manager import SessionManager
 from extensions.resource_manager import resource_manager
-from speech_service import sintetizar_fala_async
+from speech_service import sintetizar_fala_async, transcrever_audio_async
+from utils.call_logger import CallLoggerManager
 
 SAMPLE_RATE = 8000
 CHANNELS = 1
@@ -117,6 +118,103 @@ async def enviar_mensagens_visitante(writer, call_id):
             await enviar_audio(writer, audio_resposta)
         await asyncio.sleep(0.2)
 
+async def iniciar_servidor_audiosocket_morador(reader, writer):
+    logger.info("Conexão recebida do morador.")
+
+    # Aqui você DEVE receber o call_id do Asterisk
+    header = await reader.readexactly(3)
+    kind = header[0]
+    length = int.from_bytes(header[1:3], "big")
+    call_id_bytes = await reader.readexactly(length)
+    call_id = str(uuid.UUID(bytes=call_id_bytes))
+
+    # Cria sessão com o call_id fornecido
+    session_manager.create_session(call_id)
+    resource_manager.register_connection(call_id, "resident", reader, writer)
+
+    task1 = asyncio.create_task(receber_audio_morador(reader, call_id))
+    task2 = asyncio.create_task(enviar_mensagens_morador(writer, call_id))
+
+    await asyncio.wait([task1, task2], return_when=asyncio.FIRST_COMPLETED)
+
+async def receber_audio_morador(reader: asyncio.StreamReader, call_id: str):
+    call_logger = CallLoggerManager.get_logger(call_id)
+
+    azure_key = os.getenv('AZURE_SPEECH_KEY')
+    azure_region = os.getenv('AZURE_SPEECH_REGION')
+
+    speech_config = speechsdk.SpeechConfig(subscription=azure_key, region=azure_region)
+    speech_config.speech_recognition_language = 'pt-BR'
+
+    push_stream = speechsdk.audio.PushAudioInputStream(
+        stream_format=speechsdk.audio.AudioStreamFormat(samples_per_second=8000, bits_per_sample=16, channels=1)
+    )
+
+    audio_config = speechsdk.audio.AudioConfig(stream=push_stream)
+    recognizer = speechsdk.SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
+
+    # Callbacks
+    async def process_recognized_text(text, audio_data):
+        if not audio_data:
+            return
+
+        session = session_manager.get_session(call_id)
+        session.resident_state = "WAITING"
+        call_logger.log_transcription_start(len(audio_data), is_visitor=False)
+
+        if text and text.strip():
+            call_logger.log_transcription_complete(text, 0, is_visitor=False)
+            session_manager.process_resident_text(call_id, text)
+        else:
+            texto = await transcrever_audio_async(audio_data, call_id=call_id)
+            if texto:
+                call_logger.log_transcription_complete(texto, 0, is_visitor=False)
+                session_manager.process_resident_text(call_id, texto)
+
+    speech_callbacks = SpeechCallbacks(call_id, is_visitor=False, call_logger=call_logger)
+    speech_callbacks.set_process_callback(process_recognized_text)
+    speech_callbacks.register_callbacks(recognizer)
+
+    recognizer.start_continuous_recognition_async()
+
+    try:
+        while True:
+            header = await reader.readexactly(3)
+            kind = header[0]
+            length = int.from_bytes(header[1:3], "big")
+            audio_chunk = await reader.readexactly(length)
+
+            push_stream.write(audio_chunk)
+    except asyncio.IncompleteReadError:
+        logger.info(f"[{call_id}] Morador desconectado.")
+    finally:
+        recognizer.stop_continuous_recognition_async()
+
+async def enviar_mensagens_morador(writer: asyncio.StreamWriter, call_id: str):
+    call_logger = CallLoggerManager.get_logger(call_id)
+
+    session = session_manager.get_session(call_id)
+    if not session:
+        logger.error(f"[{call_id}] Sessão não encontrada.")
+        return
+
+    while True:
+        await asyncio.sleep(0.2)
+
+        if session.terminate_resident_event.is_set():
+            break
+
+        msg = session_manager.get_message_for_resident(call_id)
+        if msg:
+            session.resident_state = "IA_TURN"
+            call_logger.log_synthesis_start(msg, is_visitor=False)
+
+            audio_resposta = await sintetizar_fala_async(msg)
+
+            if audio_resposta:
+                await enviar_audio(writer, audio_resposta, call_id=call_id, origem="Morador")
+                session.resident_state = "USER_TURN"
+
 async def enviar_audio(writer, dados_audio):
     chunk_size = 320
     for i in range(0, len(dados_audio), chunk_size):
@@ -125,19 +223,3 @@ async def enviar_audio(writer, dados_audio):
         writer.write(header + chunk)
         await writer.drain()
         await asyncio.sleep(0.02)
-
-async def iniciar_servidor_audiosocket_morador(reader, writer):
-    logger.info("Conexão recebida do morador.")
-    call_id = str(uuid.uuid4())
-    session_manager.create_session(call_id)
-
-    task1 = asyncio.create_task(receber_audio_morador(reader, call_id))
-    task2 = asyncio.create_task(enviar_mensagens_morador(writer, call_id))
-
-    await asyncio.wait([task1, task2], return_when=asyncio.FIRST_COMPLETED)
-
-async def receber_audio_morador(reader, call_id):
-    pass
-
-async def enviar_mensagens_morador(writer, call_id):
-    pass
