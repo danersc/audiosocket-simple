@@ -61,11 +61,34 @@ class SpeechCallbacks:
         role = "visitante" if self.is_visitor else "morador"
         
         # Log detalhado do evento - IMPORTANTE PARA DIAGNÓSTICO
-        logger.info(f"[{self.call_id}] EVENTO ON_RECOGNIZED DISPARADO! Reason: {evt.result.reason}")
+        logger.info(f"[{self.call_id}] *** EVENTO ON_RECOGNIZED DISPARADO! ***")
+        
+        # Logar informações detalhadas do evento
+        try:
+            # Logar tipo do evento
+            logger.info(f"[{self.call_id}] Tipo do evento: {type(evt).__name__}")
+            
+            # Logar tipo do resultado
+            if hasattr(evt, 'result'):
+                logger.info(f"[{self.call_id}] Tipo do resultado: {type(evt.result).__name__}")
+                
+                # Logar reason do resultado
+                if hasattr(evt.result, 'reason'):
+                    reason_str = f"{evt.result.reason}"
+                    reason_int = int(evt.result.reason) if hasattr(evt.result.reason, '__int__') else -1
+                    logger.info(f"[{self.call_id}] Reason: {reason_str} (valor: {reason_int})")
+                
+                # Logar texto do resultado
+                if hasattr(evt.result, 'text'):
+                    logger.info(f"[{self.call_id}] Texto reconhecido: '{evt.result.text}'")
+        except Exception as e:
+            logger.error(f"[{self.call_id}] Erro ao logar detalhes do evento recognized: {e}")
+        
         logger.info(f"[{self.call_id}] Estado do buffer: {len(self.audio_buffer)} frames, collecting={self.collecting_audio}")
         
         # Cancelar qualquer tarefa de timeout pendente
         if self.last_timeout_task and not self.last_timeout_task.done():
+            logger.info(f"[{self.call_id}] Cancelando tarefa de timeout - recognized chegou normalmente")
             self.last_timeout_task.cancel()
         
         # Log detalhado de propriedades do resultado para diagnóstico
@@ -76,9 +99,16 @@ class SpeechCallbacks:
                     logger.info(f"[{self.call_id}] Propriedades do resultado: {properties}")
                 
                 # Capturar resposta JSON completa do serviço, se disponível
-                if properties and properties.get_property(speechsdk.PropertyId.SpeechServiceResponse_JsonResult):
-                    json_result = properties.get_property(speechsdk.PropertyId.SpeechServiceResponse_JsonResult)
-                    logger.info(f"[{self.call_id}] JSON do resultado: {json_result}")
+                # Verificar se properties é um objeto que tem o método get_property ou se é um dicionário
+                if properties:
+                    if hasattr(properties, 'get_property'):
+                        # É um objeto com método get_property
+                        if properties.get_property(speechsdk.PropertyId.SpeechServiceResponse_JsonResult):
+                            json_result = properties.get_property(speechsdk.PropertyId.SpeechServiceResponse_JsonResult)
+                            logger.info(f"[{self.call_id}] JSON do resultado: {json_result}")
+                    elif isinstance(properties, dict):
+                        # É um dicionário
+                        logger.info(f"[{self.call_id}] Propriedades como dicionário: {properties}")
             except Exception as e:
                 logger.error(f"[{self.call_id}] Erro ao acessar propriedades: {e}")
         
@@ -161,55 +191,73 @@ class SpeechCallbacks:
             logger.warning(f"[{self.call_id}] Fim de fala detectado, mas sem dados para processar")
             return
         
+        # Garantir que processamos diretamente se não houver recognized
+        logger.info(f"[{self.call_id}] Iniciando timer para processamento manual caso recognized não dispare (buffer: {len(self.audio_buffer)} frames)")
+        
+        # IMPORTANTE: Salvar snapshot do buffer atual para usar no timeout
+        # Isso evita que o buffer seja modificado entre o fim da fala e o timeout
+        current_buffer = list(self.audio_buffer)
+        
         # Verificar se on_recognized será chamado
         # CORREÇÃO: Criamos uma função para iniciar a tarefa corretamente 
         # e armazenamos a referência a ela para poder cancelá-la se o recognized acontecer
-        self.start_recognition_timeout()
+        self.start_recognition_timeout(current_buffer)
         
         # Apenas marcar que a coleta terminou
         # O áudio será processado quando o evento on_recognized for disparado
         # ou após o timeout se o evento não ocorrer
         self.collecting_audio = False
     
-    def start_recognition_timeout(self):
+    def start_recognition_timeout(self, current_buffer):
         """Inicia uma tarefa de timeout para verificar se o evento recognized ocorreu."""
-        async def check_recognition_timeout():
+        async def check_recognition_timeout(buffer_snapshot):
             try:
-                await asyncio.sleep(3.0)  # Esperar 3 segundos
+                # Aguardar tempo reduzido para melhorar a responsividade
+                await asyncio.sleep(2.0)  # Esperar 2 segundos
                 
-                # Se ainda temos o mesmo áudio no buffer, o evento on_recognized não foi disparado
-                if not self.collecting_audio and len(self.audio_buffer) > 0:
-                    logger.warning(f"[{self.call_id}] TIMEOUT: on_recognized não foi disparado após 3s. Processando manualmente.")
+                # Verificar se o evento recognized já foi disparado (buffer foi limpo)
+                if len(self.audio_buffer) == 0:
+                    logger.info(f"[{self.call_id}] Buffer foi limpo, RECOGNIZED já foi processado")
+                    return
+                
+                # Se chegamos aqui, o evento recognized não foi disparado
+                logger.warning(f"[{self.call_id}] TIMEOUT: on_recognized não foi disparado após 2s. Processando manualmente.")
+                
+                # Processar o áudio diretamente
+                if self.process_callback:
+                    # Usar o snapshot do buffer que foi salvo no momento do on_speech_end_detected
+                    # Isso garante que processamos o áudio correto mesmo se o buffer foi modificado
+                    audio_data = b"".join(buffer_snapshot)
                     
-                    # Processar o áudio diretamente
-                    if self.process_callback:
-                        audio_data = b"".join(self.audio_buffer)
-                        
-                        # Executar callback
-                        loop = asyncio.get_event_loop()
-                        future = asyncio.run_coroutine_threadsafe(
-                            self.process_callback("", audio_data),
-                            loop
-                        )
-                        
-                        # Aguardar conclusão
-                        try:
-                            future.result(timeout=5.0)
-                            logger.info(f"[{self.call_id}] Processamento após timeout concluído com sucesso")
-                        except Exception as e:
-                            logger.error(f"[{self.call_id}] Erro no processamento após timeout: {e}")
-                        
-                        # Limpar buffer após processamento
-                        self.audio_buffer = []
+                    logger.info(f"[{self.call_id}] Processando áudio manualmente: {len(audio_data)} bytes")
+                    
+                    # Executar callback
+                    loop = asyncio.get_event_loop()
+                    future = asyncio.run_coroutine_threadsafe(
+                        self.process_callback("", audio_data),
+                        loop
+                    )
+                    
+                    # Aguardar conclusão
+                    try:
+                        future.result(timeout=5.0)
+                        logger.info(f"[{self.call_id}] Processamento manual após timeout concluído com sucesso")
+                    except Exception as e:
+                        logger.error(f"[{self.call_id}] Erro no processamento manual após timeout: {e}")
+                    
+                    # Limpar buffer após processamento
+                    self.audio_buffer = []
+                else:
+                    logger.error(f"[{self.call_id}] Não foi possível processar após timeout: process_callback não definido")
             except asyncio.CancelledError:
                 # Tarefa foi cancelada porque o recognized foi disparado
-                logger.debug(f"[{self.call_id}] Tarefa de timeout cancelada, recognized foi disparado normalmente")
+                logger.info(f"[{self.call_id}] Tarefa de timeout cancelada, recognized foi disparado normalmente")
             except Exception as e:
                 logger.error(f"[{self.call_id}] Erro na tarefa de timeout: {e}")
         
         # Criar e armazenar a tarefa
         loop = asyncio.get_event_loop()
-        self.last_timeout_task = asyncio.run_coroutine_threadsafe(check_recognition_timeout(), loop)
+        self.last_timeout_task = asyncio.run_coroutine_threadsafe(check_recognition_timeout(current_buffer), loop)
     
     def on_recognizing(self, evt):
         """Callback para resultados parciais de reconhecimento."""
@@ -282,13 +330,30 @@ class SpeechCallbacks:
     def register_callbacks(self, recognizer, speech_config=None):
         """Registra todos os callbacks com o recognizer."""
         # ATENÇÃO: Corrigido o erro de registro do callback
-        recognizer.recognized.connect(self.on_recognized)
-        recognizer.speech_start_detected.connect(self.on_speech_start_detected)
-        recognizer.speech_end_detected.connect(self.on_speech_end_detected)
-        recognizer.recognizing.connect(self.on_recognizing)
-        recognizer.session_started.connect(self.on_session_started)
-        recognizer.session_stopped.connect(self.on_session_stopped)
-        recognizer.canceled.connect(self.on_canceled)
+        logger.info(f"[{self.call_id}] Registrando callbacks para {'visitante' if self.is_visitor else 'morador'}")
+        
+        # Verificar se o recognizer é válido
+        if not recognizer:
+            logger.error(f"[{self.call_id}] ERRO: Recognizer é None ou inválido!")
+            return
+            
+        # Registrar callbacks com verificação de erros
+        try:
+            # Registrar callback para evento recognized (MAIS IMPORTANTE)
+            recognizer.recognized.connect(self.on_recognized)
+            logger.info(f"[{self.call_id}] Callback 'recognized' registrado com sucesso")
+            
+            # Registrar outros callbacks
+            recognizer.speech_start_detected.connect(self.on_speech_start_detected)
+            recognizer.speech_end_detected.connect(self.on_speech_end_detected)
+            recognizer.recognizing.connect(self.on_recognizing)
+            recognizer.session_started.connect(self.on_session_started)
+            recognizer.session_stopped.connect(self.on_session_stopped)
+            recognizer.canceled.connect(self.on_canceled)
+            
+            logger.info(f"[{self.call_id}] Todos os callbacks registrados com sucesso")
+        except Exception as e:
+            logger.error(f"[{self.call_id}] ERRO AO REGISTRAR CALLBACKS: {e}")
         
         # Configurar arquivo de log do SDK para diagnóstico detalhado
         if speech_config:
@@ -304,13 +369,22 @@ class SpeechCallbacks:
                 speech_config.output_format = speechsdk.OutputFormat.Detailed
                 logger.info(f"[{self.call_id}] Formato de saída detalhado ativado")
                 
-                # Configurar explicitamente o formato de áudio
+                # Configurar timeout de silêncio e outras propriedades importantes
                 speech_config.set_property(speechsdk.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "2000")
                 logger.info(f"[{self.call_id}] Timeout de silêncio final configurado para 2000ms")
+                
+                # Ajustar propriedades adicionais para melhorar o reconhecimento
+                if hasattr(speechsdk.PropertyId, "Speech_SegmentationSilenceTimeoutMs"):
+                    speech_config.set_property(speechsdk.PropertyId.Speech_SegmentationSilenceTimeoutMs, "1000")
+                    logger.info(f"[{self.call_id}] Timeout de segmentação configurado para 1000ms")
+                
+                # Configurar idioma explicitamente
+                speech_config.speech_recognition_language = "pt-BR"
+                logger.info(f"[{self.call_id}] Idioma de reconhecimento configurado para pt-BR")
             except Exception as e:
                 logger.error(f"[{self.call_id}] Erro ao configurar logs do SDK: {e}")
         
-        logger.info(f"[{self.call_id}] Callbacks registrados com sucesso para {'visitante' if self.is_visitor else 'morador'}")
+        logger.info(f"[{self.call_id}] Configuração de callbacks concluída para {'visitante' if self.is_visitor else 'morador'}")
     
     def mark_ia_audio_sent(self):
         """
