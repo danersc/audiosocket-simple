@@ -29,8 +29,7 @@ async def iniciar_servidor_audiosocket_visitante(reader, writer):
     audio_config = speechsdk.audio.AudioConfig(stream=push_stream)
 
     recognizer = speechsdk.SpeechRecognizer(speech_config, audio_config)
-
-    callbacks = SpeechCallbacks(call_id="visitante_test", audio_format=audio_format)
+    callbacks = SpeechCallbacks(call_id="visitante_test")
     callbacks.register_callbacks(recognizer)
 
     recognizer.start_continuous_recognition_async()
@@ -41,14 +40,13 @@ async def iniciar_servidor_audiosocket_visitante(reader, writer):
             if not data:
                 break
             push_stream.write(data)
-            callbacks.add_audio_chunk(data)  # adiciona chunks ao buffer para debug
+            callbacks.add_audio_chunk(data)  # <-- Adicione esta linha!
 
     except Exception as e:
         logger.error(f"Erro ao receber dados: {e}")
     finally:
         push_stream.close()
         recognizer.stop_continuous_recognition_async()
-        await writer.wait_closed()
 
 
 async def iniciar_servidor_audiosocket_morador(reader, writer):
