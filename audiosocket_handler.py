@@ -1,14 +1,13 @@
+# audiosocket_handler.py (trecho ajustado)
+
 import asyncio
 import logging
 import azure.cognitiveservices.speech as speechsdk
-from dotenv import load_dotenv
-
 from azure_speech_callbacks import SpeechCallbacks
 import os
 import wave
-from session_manager import SessionManager  # <- importado aqui para usar após transcrição
-
-load_dotenv()
+from session_manager import SessionManager  # Garanta que esta importação esteja correta
+from uuid import uuid4
 
 SAMPLE_RATE = 8000
 CHANNELS = 1
@@ -17,8 +16,6 @@ os.makedirs(DEBUG_DIR, exist_ok=True)
 
 logger = logging.getLogger(__name__)
 
-# Podemos instanciar um SessionManager aqui como singleton/global.
-# Se preferir criar em outro lugar, adapte.
 session_manager = SessionManager()
 
 async def read_tlv_packet(reader):
@@ -51,8 +48,15 @@ async def iniciar_servidor_audiosocket_visitante(reader, writer):
     audio_config = speechsdk.audio.AudioConfig(stream=push_stream)
 
     recognizer = speechsdk.SpeechRecognizer(speech_config, audio_config)
-    session_id = "visitante_test"  # Aqui pode vir de uma lógica dinâmica depois
-    callbacks = SpeechCallbacks(call_id=session_id, session_manager=session_manager)
+
+    # Gerar um ID único para esta sessão específica
+    session_id = str(uuid4())
+
+    # Criar sessão e enviar mensagem de saudação inicial imediatamente
+    session = session_manager.create_session(session_id)
+    session_manager.enfileirar_visitor(session_id, "Olá, seja bem-vindo! Por favor, informe seu nome e apartamento.")
+
+    callbacks = SpeechCallbacks(call_id=session_id)
     callbacks.register_callbacks(recognizer)
 
     recognizer.start_continuous_recognition_async()
@@ -70,7 +74,7 @@ async def iniciar_servidor_audiosocket_visitante(reader, writer):
                 push_stream.write(payload)
                 callbacks.add_audio_chunk(payload)
 
-            elif packet_type == 0x01:  # UUID
+            elif packet_type == 0x01:  # UUID (opcional)
                 uuid = payload.hex()
                 logger.info(f"UUID recebido: {uuid}")
 
@@ -86,8 +90,9 @@ async def iniciar_servidor_audiosocket_visitante(reader, writer):
         push_stream.close()
         recognizer.stop_continuous_recognition_async()
 
+        # Salvar áudio para diagnóstico
         audio_data = b''.join(audio_buffer)
-        filename = os.path.join(DEBUG_DIR, "audio_recebido_socket.wav")
+        filename = os.path.join(DEBUG_DIR, f"audio_{session_id}.wav")
         with wave.open(filename, 'wb') as wf:
             wf.setnchannels(CHANNELS)
             wf.setsampwidth(2)
