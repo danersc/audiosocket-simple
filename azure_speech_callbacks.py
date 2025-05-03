@@ -9,11 +9,15 @@ logger = logging.getLogger(__name__)
 DEBUG_DIR = "audio/debug"
 os.makedirs(DEBUG_DIR, exist_ok=True)
 
+# Definir explicitamente as configurações de áudio
+SAMPLE_RATE = 8000
+CHANNELS = 1
+BITS_PER_SAMPLE = 16
+
 class SpeechCallbacks:
-    def __init__(self, call_id, audio_format):
+    def __init__(self, call_id):
         self.call_id = call_id
         self.audio_buffer = []
-        self.audio_format = audio_format
         self.recognition_count = 0
 
     def log_event(self, event_type, data=None):
@@ -26,7 +30,10 @@ class SpeechCallbacks:
 
             # Salva áudio no momento do reconhecimento
             self.recognition_count += 1
-            filename = os.path.join(DEBUG_DIR, f"{self.call_id}_recognized_{self.recognition_count}_{int(time.time())}.wav")
+            filename = os.path.join(
+                DEBUG_DIR,
+                f"{self.call_id}_recognized_{self.recognition_count}_{int(time.time())}.wav"
+            )
             self.save_audio_to_wav(filename)
             self.audio_buffer.clear()
 
@@ -34,7 +41,10 @@ class SpeechCallbacks:
             self.log_event("NO_MATCH", evt.result.no_match_details)
 
             # Salva áudio mesmo quando não houver match
-            filename = os.path.join(DEBUG_DIR, f"{self.call_id}_nomatch_{int(time.time())}.wav")
+            filename = os.path.join(
+                DEBUG_DIR,
+                f"{self.call_id}_nomatch_{int(time.time())}.wav"
+            )
             self.save_audio_to_wav(filename)
             self.audio_buffer.clear()
 
@@ -57,9 +67,9 @@ class SpeechCallbacks:
         try:
             audio_data = b''.join(self.audio_buffer)
             with wave.open(filename, 'wb') as wf:
-                wf.setnchannels(self.audio_format.channels)
-                wf.setsampwidth(2)  # 16 bits = 2 bytes
-                wf.setframerate(self.audio_format.samples_per_second)
+                wf.setnchannels(CHANNELS)
+                wf.setsampwidth(BITS_PER_SAMPLE // 8)  # 16 bits = 2 bytes
+                wf.setframerate(SAMPLE_RATE)
                 wf.writeframes(audio_data)
 
             self.log_event("AUDIO_SAVED", filename)
