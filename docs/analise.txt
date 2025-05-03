@@ -1,0 +1,241 @@
+Comparação de Especificações de Áudio: AudioSocket (Go) vs. Script Python com Azure Speech SDK
+
+Formato e Codec de Áudio (AudioSocket vs Azure Speech SDK)
+
+AudioSocket (Asterisk): O protocolo AudioSocket do Asterisk envia áudio em formato PCM linear assinado 16-bit, mono, 8 kHz, de forma não compressa ￼. Esse formato é fixo por design – não é configurável, independentemente do codec original da chamada ￼. Ou seja, mesmo que a chamada esteja usando por exemplo G.711 (a-law/µ-law) ou outro codec, o AudioSocket sempre realiza transcodificação interna para PCM linear 16-bit/8 kHz antes de transmitir. Os dados de áudio são enviados como amostras int16 little-endian (ordem de bytes do menos significativo primeiro) ￼.
+
+Azure Speech SDK (PushAudioInputStream): O SDK de Speech da Azure suporta diretamente entrada de áudio PCM linear 16-bit em mono, e explicitamente aceita taxas de 8.000 Hz ou 16.000 Hz para reconhecimento de fala ￼. O formato padrão se não especificado é 16 kHz/16-bit/mono ￼ ￼, mas é possível (e recomendado neste caso) configurar o stream para 8 kHz para corresponder ao áudio do AudioSocket. Em Python, isso pode ser feito criando um objeto AudioStreamFormat com 8 kHz, 16-bit, mono e vinculando-o ao PushAudioInputStream. Dessa forma, o SDK saberá que os dados brutos fornecidos estão em 8000 Hz e interpretará corretamente o tempo e frequência da fala. Importante: o Azure espera exatamente áudio PCM bruto (RAW) nesses parâmetros – não deve haver cabeçalho de WAV ou qualquer compressão. De fato, a Microsoft documenta que as amostras devem ser 16-bit little-endian e que, se o áudio de origem não corresponder a esses formatos suportados, deve-se convertê-lo para o formato exigido antes de alimentar o reconhecimento ￼.
+
+Comparação: Ambos os lados utilizam PCM linear 16-bit mono – não há diferenças de codec (nenhum lado espera codecs como MP3, G.711, etc., apenas áudio linear não comprimido). A diferença principal está na taxa de amostragem: o AudioSocket opera em 8 kHz fixos, enquanto o Azure por padrão espera 16 kHz (mas suporta 8 kHz se configurado). Portanto, para garantir fidelidade, o script Python deve informar ao Azure que o áudio é 8 kHz, caso contrário o serviço presumirá 16 kHz e pode interpretar mal os dados (tempo e tom incorretos, afetando a inteligibilidade). Em resumo: codec PCM e formatação de sample são alinhados, mas é crucial alinhar a taxa de amostragem no lado do Azure. Ambos utilizam little-endian para as amostras de 16 bits, então não há necessidade de reordenar bytes – apenas garantir que sejam passados de forma idêntica à recepção.
+
+Taxa de Amostragem e Profundidade de Bits
+
+AudioSocket (Go/Asterisk): Sempre utiliza 8000 Hz, 16-bit PCM. Cada amostra é um int16 (2 bytes), e o fluxo é mono (1 canal). Não há suporte a 16 kHz ou estéreo no protocolo AudioSocket padrão ￼. Essa taxa de 8 kHz reflete a qualidade de áudio narrowband típica de telefonia (voz em banda estreita, limitando frequências ~300–3400 Hz). A profundidade de 16 bits por amostra garante um range dinâmico adequado para voz sem compressão adicional.
+
+Azure Speech SDK (Python): Suporta 8000 Hz e 16000 Hz (também outras como 24k, 44.1k dependendo da documentação, mas 8k/16k são os principais para fala) com 16 bits ￼. Por padrão, se não especificado, o SDK usará 16000 Hz/16-bit (o “formato default”) ￼ ￼. A profundidade também é 16-bit, e espera-se um único canal. Como o áudio do Asterisk vem a 8 kHz, deve-se ou configurar o AudioStreamFormat para 8 kHz ou realizar um resample para 16 kHz antes de enviar ao Azure. A opção mais simples e fiel é configurar para 8000 Hz, evitando qualquer alteração do áudio. O SDK disponibiliza métodos como AudioStreamFormat.get_wave_format_pcm(8000,16,1) para criar essa configuração ￼.
+
+Possíveis Impactos: Se houver discrepância aqui, a qualidade sofre. Por exemplo, se o script Python não ajustar a taxa e empurrar áudio 8 kHz “cru” sem informar, o Azure irá tratá-lo como 16 kHz. Isso dobra efetivamente a duração aparente do áudio (pois 8k amostras por segundo serão interpretadas como metade da velocidade esperada de 16k) – a fala ficaria desacelerada e possivelmente ininteligível, prejudicando o reconhecimento. Inversamente, se alguém tentasse forçar 16 kHz sem resample (por duplicação de amostras, etc.), poderia ocorrer distorção de tom ou artefatos. Portanto, igualar taxa de amostragem (8 kHz) e bits (16-bit) entre emissor (Asterisk) e receptor (Azure) é essencial para manter a fidelidade e inteligibilidade do áudio. Felizmente, ambos operam com 16-bit, então não há diferença de resolução a corrigir – o foco é na frequência de amostragem.
+
+Tamanho dos Chunks (Pacotes de Áudio)
+
+AudioSocket (Go/Asterisk): O áudio é transmitido em blocos correspondentes aos frames de áudio do Asterisk. Tipicamente, cada quadro de áudio de 20 ms (padrão de telefonia) contém 160 amostras a 8 kHz, o que equivale a 320 bytes de áudio PCM (160 * 2 bytes) ￼. De fato, o Asterisk espera exatamente 323 bytes por pacote de 20 ms – dos quais 3 bytes são do cabeçalho (TLV) e 320 bytes são dados de áudio ￼. Ou seja, a cada 20 ms, o AudioSocket envia um pacote com 320 bytes de áudio bruto. Essa cadência corresponde a ~50 pacotes por segundo, totalizando ~16 kB/s de payload de áudio, o que bate com a taxa (8000 samples/s * 2 bytes = 16,000 bytes/s). O tamanho do chunk portanto não varia durante a chamada (sempre 320 bytes de áudio por pacote), exceto possivelmente o último pacote antes de encerrar a chamada, que pode vir com menos áudio se a duração não for múltipla de 20 ms. Vale observar que o AudioSocket encapsula cada bloco de áudio em seu próprio pacote TLV separado – não há streaming contínuo sem fronteiras: cada chunk tem um prefixo de header indicando seu tamanho (ver próxima seção).
+
+Script Python (Azure Push Stream): O Azure PushAudioInputStream não impõe um tamanho fixo de chunk – você pode escrever quantos bytes quiser por vez no stream, e o SDK fará o buffer interno para o reconhecedor. No entanto, boas práticas de streaming em tempo real recomendam empurrar os dados na mesma cadência que são recebidos, geralmente em pequenos blocos equivalentes a alguns dezenas de milissegundos de áudio, para minimizar latência. Uma abordagem sensata é reutilizar os próprios chunks de 20 ms que chegam do Asterisk: ler cada pacote de 320 bytes (depois de remover cabeçalho) e imediatamente escrever esses 320 bytes no PushAudioInputStream. Assim, o pipeline de reconhecimento acompanha o ritmo do áudio. Isso mantém o tamanho de chunk consistente (320 bytes por write) e sincronizado com a produção de áudio original.
+
+Comparação e Impacto: Em termos de tamanho, 320 bytes de áudio por 20 ms é o padrão do AudioSocket ￼. O Python pode adotar exatamente esse tamanho ao repassar os dados para Azure – não há necessidade de alterar o tamanho dos lotes. Se o script em Python, por descuido, tentar juntar múltiplos pacotes antes de enviar (por exemplo, acumulando 1 segundo de áudio antes de push), isso aumentaria a latência e poderia atrasar o reconhecimento contínuo. Por outro lado, se enviar pacotes quebrados (ex.: enviar menos de 320 bytes ou dividir um pacote de 20 ms em pedaços menores inadvertidamente), não há perda de qualidade sonora (pois o áudio em si não muda), mas é possível que introduza overhead ou complexidade desnecessária. O importante é não perder nem duplicar bytes na transição. Cada chunk deve ser lido integralmente e repassado integralmente. Qualquer desvio – como perder parte do buffer ou enviar dados adicionais – impactará a qualidade. Por exemplo, enviar mais dados que o esperado por intervalo de 20 ms pode causar sobreposição ou aceleração de áudio. No contexto do Asterisk, o envio de mais que 320 bytes por 20 ms fez com que o som ficasse distorcido no lado de lá ￼. No nosso caso (recebendo áudio), o Asterisk é quem envia no tempo correto; o Python apenas precisa acompanhar. Recomendação: manter o processamento em blocos síncronos de ~320 bytes, espelhando a segmentação original, para preservar a temporalidade e conteúdo do áudio.
+
+Formatação dos Dados e Padding (TLV, Endianness, etc.)
+
+AudioSocket (formatação TLV): Diferente de um simples fluxo PCM contínuo, o AudioSocket implementa um protocolo TLV (Type-Length-Value) em cima do TCP ￼ ￼. Cada mensagem enviada pelo Asterisk possui: um byte de tipo, dois bytes de comprimento (unsigned 16-bit big-endian indicando quantos bytes têm no payload), e então o payload de áudio propriamente dito ￼ ￼. Para áudio, o type usado é 0x10 e o payload são os bytes PCM (little-endian) das amostras ￼. Não há nenhum padding extra além do necessário para alinhar as amostras de 16 bits – como visto, o comprimento do payload de áudio normalmente é 320 (0x0140 em hex, big-endian seria 0x01 0x40 nos dois bytes de length). Importante: O AudioSocket também envia uma mensagem inicial de tipo 0x01 contendo um UUID de 16 bytes identificando o stream ￼. Essa é enviada logo que a conexão é estabelecida, antes de quaisquer dados de áudio, e serve como identificação do canal. Além disso, se ocorrer um evento de hangup ou erro, mensagens de tipo 0x00 (terminate) ou 0xFF (erro) podem ser enviadas com payload específico ￼. Do ponto de vista de formatação, isso significa que o script Python precisa interpretar corretamente esse protocolo: distinguir os cabeçalhos e extrair somente os bytes de áudio para enviar ao SDK de reconhecimento.
+
+Script Python (leitura e formatação): No script Python, ao ler do socket TCP, não se deve tratar o fluxo como áudio bruto contínuo sem parse. É necessário implementar a lógica de desembrulhar o TLV: por exemplo, ler 1 byte para obter o tipo; se for 0x10 (áudio), então ler os próximos 2 bytes para obter o comprimento (interpretar em big-endian); então ler aquele número de bytes de payload de áudio. Para o tipo 0x01 (UUID inicial), pode-se ler os 16 bytes de UUID e simplesmente ignorá-los ou armazená-los para fins de logging, mas não devem ser encaminhados ao motor de reconhecimento (são metadados, não áudio). O mesmo vale para quaisquer pacotes de erro ou término – eles sinalizam eventos, não são áudio válido. Assim, a formatação esperada pelo Azure PushAudioInputStream é somente o payload PCM em sequência, sem os headers do AudioSocket e sem nenhum outro encapsulamento. Em outras palavras, o Python deve fornecer ao Azure somente os bytes 16-bit little-endian correspondentes às amostras de voz, concatenados continuamente no tempo.
+
+Padding: O AudioSocket em si não adiciona padding nas amostras – entrega exatamente o número de bytes indicado. Cada amostra de 16-bit já ocupa 2 bytes; então todos os payloads de áudio têm comprimento par, alinhados naturalmente. Não há bytes de preenchimento extras entre pacotes (os pacotes apenas se sucedem no stream TCP). No lado do Azure, a documentação menciona “two-block aligned (16 bit including padding for a sample)” ￼, o que basicamente reforça que cada amostra ocupa 2 bytes alinhados – condição já satisfeita pelo formato do AudioSocket. Não é necessário inserir ou remover nenhum padding manualmente; basta garantir que os pares de bytes permaneçam juntos como amostras.
+
+Possíveis Problemas de Formatação: Se o script Python não fizer o parse correto do TLV, a qualidade será drasticamente afetada. Por exemplo, se alimentar o Azure com os dados incluindo os cabeçalhos TLV, o fluxo de áudio terá bytes espúrios a cada 323 bytes – esses bytes extras (tipo e length) seriam interpretados como parte do sinal de áudio, causando ruído alto e incoerente. Isso tornaria a fala quase ininteligível e o reconhecimento de voz falharia. Portanto, é fundamental remover qualquer overhead de protocolo. Por outro lado, se o parse for correto, os bytes de áudio em si já estão no formato exato que o Azure espera (PCM 16-bit LE). Não é preciso converter endianness (já é LE) nem decodificar de µ-law/A-law (o Asterisk já enviou linear). De fato, especialistas confirmam que para usar áudio do AudioSocket basta obter um wav 16-bit 8000 Hz mono e remover cabeçalhos ou codificações – nenhuma “tradução” adicional é necessária além de extrair o áudio bruto ￼. Em suma: garanta que o script Python leia e separe os campos do protocolo e passe adiante somente o conteúdo PCM. Também certifique-se de descartar o cabeçalho WAV se o áudio for oriundo de um arquivo; no nosso caso o AudioSocket já fornece raw PCM, então isso não se aplica diretamente, mas é análogo ao que foi observado (um usuário notou que precisava retirar os 44 bytes de cabeçalho WAV antes de enviar ao AudioSocket ￼ ￼ – no recebimento, nós precisamos retirar o “cabeçalho” do AudioSocket).
+
+Transmissão de Áudio via TCP (Exemplo em Go)
+
+No exemplo em Go (examples/playfile/main.go do repositório audiosocket), o programa atua como um servidor AudioSocket que recebe a conexão do Asterisk e, por sua vez, envia áudio de um arquivo para o chamador. Embora o foco seja reproduzir um arquivo para o lado Asterisk, o código ilustra como os dados de áudio são enviados via TCP conforme o protocolo. Provavelmente, o fluxo funciona assim: assim que a conexão é estabelecida, o código recebe o pacote UUID (0x01) do Asterisk e possivelmente o loga; depois, abre um arquivo de áudio (por exemplo, um WAV mono 8 kHz) e prepara os dados. Antes de enviar, garante-se que o áudio esteja no formato correto (PCM 16-bit LE, 8 kHz) – possivelmente removendo cabeçalho WAV, conforme necessário. Em seguida, o código envia pacotes 0x10 contendo blocos de áudio. Cada bloco enviado tem exatamente 320 bytes de áudio e é precedido de um cabeçalho de 3 bytes (tipo 0x10 e length=320) ￼. Muito provavelmente, o código implementa uma forma de timing para não inundar o Asterisk: ou seja, envia um pacote de 20 ms de áudio e então aguarda ~20 ms antes de enviar o próximo. Esse controle pode ser implementado com time.Sleep(20 * time.Millisecond) ou usando o tamanho do áudio e relógio do sistema para sincronizar a reprodução em tempo real. Isso é necessário porque, embora o TCP garanta entrega ordenada, o Asterisk assume que os pacotes de áudio chegam em ritmo real; se o servidor enviar mais rápido que o tempo real, o Asterisk terá que descartar ou enfileirar pacotes, causando distorção (como foi observado por um desenvolvedor que enviava áudio duplicado muito rapidamente e causou overrun do buffer ￼). Portanto, o exemplo Go demonstra envio sequencial e temporal dos pacotes de áudio via TCP, sem protocolos adicionais (o AudioSocket em si já define o formato). Em resumo, o áudio é enviado como um fluxo binário TCP consistente com o protocolo: uma sequência de mensagens TLV, cada uma enviada de forma back-to-back. Não há ACK específicos no nível do áudio nem compressão – é um pipe de áudio bruto em tempo real.
+
+Para o lado de recepção (nosso caso com Python), a transmissão TCP significa que os dados do áudio chegam em ordem e no mesmo ritmo que foram enviados. O script Python deve ler do socket como de um stream contínuo de bytes. Graças ao protocolo TLV, consegue-se delinear perfeitamente onde cada frame começa e termina, mesmo que o TCP junte múltiplos pacotes em um só segmento ou divida um pacote em partes (o delineamento é feito via interpretação do header, não dependente de fronteiras de leitura). Assim, ler do socket em blocos arbitrários (ex.: recv(1024) bytes) é aceitável, desde que os bytes sejam acumulados até formar uma mensagem completa conforme o header. Em prática, o Python pode simplificar lendo exatamente 3 bytes para header, depois exatamente o número de bytes indicado, repetidamente. Isso garante acompanhar a forma de envio do exemplo Go. A chave é: o envio no exemplo Go é feito de forma linear via TCP (sem protocolos de alto nível), logo o Python deve espelhar isso com uma leitura linear e parse apropriado.
+
+Possíveis Problemas Identificados
+
+1. Taxa de amostragem divergente: se o Azure estiver interpretando o áudio em 16 kHz enquanto o Asterisk envia 8 kHz, o reconhecimento terá erros graves de velocidade/entonação. Esse desalinhamento de sample rate é um dos principais suspeitos para perda de inteligibilidade. (Solução: configurar o formato de áudio para 8000 Hz no SDK ou realizar upsampling adequado – ver recomendações).
+
+2. Cabeçalhos/protocolo não tratados: se o script Python não filtrar os bytes de protocolo (TLV), a qualidade do áudio decodificado será ruim ou inaudível, pois bytes de tipo e comprimento entrarão no fluxo de áudio. Exemplo: bytes 0x01 do UUID inicial seriam interpretados como amostras PCM altamente ruidosas; a cada 320 bytes de áudio, haveria 3 bytes estranhos inseridos. Isso certamente degrada ou até impede o reconhecimento de fala.
+
+3. Formato de sample errado (endianness ou codificação): embora tanto AudioSocket quanto Azure usem 16-bit little-endian PCM, um erro de interpretação (por exemplo, tratar os bytes como big-endian por engano, ou supor que estão em A-law/G.711) geraria áudio distorcido. Felizmente, a especificação deixa claro: AudioSocket já envia little-endian PCM ￼, e o Azure espera little-endian ￼, então não há conversão a fazer. Apenas certifique-se de não aplicar nenhuma transcodificação extra. Por exemplo, não usar bibliotecas de áudio para “decodificar” esses bytes pensando que são compressos – eles já estão decodificados.
+
+4. Tamanho de chunk e temporalidade: embora enviar os dados em blocos de tamanho diferente não mude o conteúdo, pode afetar a temporização do reconhecimento. Se o Python acumular muitos frames antes de enviar, o Azure receberá áudio atrasado em bursts, podendo atrasar resultados parciais. Se, ao contrário, o Python enviasse pedaços menores que um frame (fragmentando os 320 bytes), não quebraria o áudio em si mas introduziria overhead de chamadas write() no stream. O pior caso seria perder frames (não ler algum pacote por completo) ou duplicar frames (enviar o mesmo bytes duas vezes por erro lógico), o que causa saltos ou ecos. Esses problemas devem ser evitados garantindo o loop de leitura/escrita adequado.
+
+5. Bandwidth de frequência limitada: este não é um “problema” de configuração, mas sim uma característica – áudio 8 kHz carrega menos detalhe que 16 kHz. Isso significa que mesmo com tudo configurado corretamente, a qualidade da voz é limitada à banda telefônica. A inteligibilidade de fala normalmente permanece boa em 8 kHz para voz, mas sons fricativos ou muito agudos podem ser um pouco menos distinguíveis. O reconhecimento de fala da Azure é treinado para banda larga geralmente, mas também suporta banda estreita. Ainda assim, é possível que a acurácia melhore um pouco se a Azure souber que o áudio é telephone specific. (Em alguns casos, a Azure ajusta automaticamente quando detecta 8 kHz, usando modelos acústicos apropriados para telefone).
+
+Recomendações de Ajustes no Script Python (Azure Speech SDK)
+
+Com base na comparação acima, seguem recomendações práticas para tornar o recebimento de áudio o mais fiel possível ao emitido pelo Asterisk via AudioSocket:
+	•	Ajustar Formato de Áudio no SDK: Configure explicitamente o AudioStreamFormat para PCM 16-bit, 8 kHz, mono ao criar o PushAudioInputStream. Por exemplo, em Python: format = speechsdk.audio.AudioStreamFormat(samples_per_second=8000, bits_per_sample=16, channels=1) e então stream = speechsdk.audio.PushAudioInputStream(stream_format=format). Em seguida, use esse stream em um AudioConfig. Isso garante que a Azure interprete corretamente a taxa de amostragem do áudio ￼ ￼. Assim, não haverá distorção temporal ou tonal – o motor de reconhecimento saberá que está recebendo áudio narrowband e processará adequadamente. (Observação: A conversão para 16 kHz via software não é necessária aqui; melhor deixar o áudio intacto em 8 kHz, pois a Azure aceita 8 kHz nativamente. Manter o áudio “como está” evita introduzir artefatos de resample e preserva fidelidade original.)
+	•	Implementar Parse do Protocolo AudioSocket: No código Python, inclua a lógica para ler e distinguir os pacotes TLV. Em termos concretos: use socket.recv() para obter dados e faça um buffer. Sempre que houver pelo menos 3 bytes no buffer, olhe o primeiro byte:
+	•	Se for 0x10 (áudio), leia os próximos 2 bytes (comprimento) como um inteiro 16-bit big-endian. Supondo que isso resulte em N (deverá ser 320 normalmente, mas não codifique fixo – use o valor). Então espere até ter N bytes no buffer (pode precisar chamar recv() várias vezes até completar). Depois, extraia esses N bytes como áudio e escreva-os no PushAudioInputStream.
+	•	Se o tipo for 0x01, então os próximos 2 bytes de length provavelmente serão 0x00 0x10 (16 decimal), indicando 16 bytes de UUID. Nesse caso, leia esses 16 bytes e descarte-os ou guarde para log. Não envie esses bytes ao Azure.
+	•	Se o tipo for 0x00 (terminate) ou 0xFF (erro), você pode interpretar isso como sinal para encerrar ou resetar o stream. Por exemplo, no caso de 0x00, você pode fechar o reconhecimento (pois a chamada acabou). Em ambos os casos, não há payload de áudio útil a enviar – trate-os como comandos.
+	•	Depois de tratar um pacote, continue no loop para o próximo (lembrando que um único recv do socket pode trazer múltiplos pacotes concatenados, ou um pacote incompleto – por isso o buffer e loop).
+Essa implementação garante que apenas áudio puro vai para o reconhecimento, correspondendo exatamente ao que o Asterisk enviou. Dica: Verifique duas vezes o endianness ao ler o comprimento: os dois bytes de length vêm em ordem big-endian ￼, portanto use algo como length = first_byte*256 + second_byte para obter o valor correto. Já o payload de áudio em si deve ser tratado como little-endian int16, porém como você vai apenas repassar os bytes brutos ao Azure (que espera little-endian), não é necessário inverter ou manipular esses bytes – envie-os na ordem que foram recebidos.
+	•	Manter o Tamanho e Ritmo dos Chunks: Sempre que possível, escreva no PushAudioStream o mesmo número de bytes que veio no payload (ex.: 320 bytes por vez, correspondente a 20 ms). Isso mantém o fluxo de áudio consistente. Não espere acumular múltiplos pacotes antes de enviar ao Azure – envie-os imediatamente ao ler. Isso minimizará a latência e permitirá que o reconhecimento contínuo da Azure produza resultados parciais mais próximos do tempo real. A Azure consegue processar o stream gradualmente, então alimente-a gradualmente. Por outro lado, evite fragmentar um único pacote de 320 bytes em múltiplas chamadas de push (desnecessário e menos eficiente). A ideia é preservar no Python o mesmo framing de áudio que o Asterisk usou. Vale notar que se seu loop de leitura for rápido o bastante (e ele deve ser), ele naturalmente vai ler ~50 pacotes por segundo que o Asterisk envia – isso já está em sincronia com o tempo real. Não introduza sleep artificiais no loop de recepção, apenas consuma e passe adiante. A temporização global já está cuidada pelo emissor (Asterisk).
+	•	Não Alterar o Conteúdo do Áudio: Nenhuma conversão de formato de áudio é necessária ou desejada. Não aplique transcodificação (como decodificar para float e recodificar), não mude endianness, não faça compressão. Simplesmente transmita os bytes PCM tal como recebidos. Conforme destacado pela comunidade, se os formatos estão corretos (16-bit, 8k, mono), “You don’t need to use any translations or decoding action.” ￼. Isso garante máxima fidelidade – o áudio recebido pelo Azure será bit a bit aquele emitido pelo Asterisk (apenas atrasado pelo trânsito de rede). Qualquer processamento extra poderia degradar o sinal (ex.: conversão para float e back pode introduzir erros de arredondamento; codificação para outro codec certamente degrada). Mantendo o caminho bit-perfect, a única limitação de qualidade será a própria fonte (telefonia 8 kHz), que é inevitável.
+	•	Tratar Arquivos/Headers se Necessário: Caso em algum momento você grave ou reproduza esse áudio, lembre-se que ele é áudio cru. Se for salvar em disco para debugging, considere adicionar um cabeçalho WAV PCM 8k para poder ouvir em players comuns, ou usar ferramentas como Audacity configuradas para 8000 Hz, 16-bit, mono PCM. No fluxo em si, contudo, nenhum cabeçalho WAV deve estar presente. Todo cabeçalho ou metadata (UUID, etc.) deve ser filtrado antes do Azure. Isso vale tanto para recepção quanto para envio: o exemplo Go removeu o cabeçalho WAV do arquivo antes de enviar ￼; analogamente, o Python não deve introduzir cabeçalhos ao repassar para Azure.
+	•	Monitorar Eventos de Fim de Transmissão: Opcionalmente, use a detecção do pacote 0x00 (terminate) para finalizar apropriadamente a sessão de reconhecimento. Por exemplo, quando o AudioSocket enviar 0x00 ou encerrar a conexão TCP, você pode chamar stop_continuous_recognition_async() ou similares do SDK para parar a recognizer gracefully. Isso garante que o Azure libere recursos e envie qualquer resultado final pendente. Essa prática não afeta a qualidade do áudio em si, mas garante que o ciclo de vida do streaming seja bem administrado.
+
+Ao adotar todos esses ajustes – formato coerente (8 kHz/16-bit), parsing correto do protocolo (somente áudio puro entra), manutenção de chunks e timing, e nenhum processamento desnecessário – o áudio alimentado no Azure Speech será o mais fiel possível ao áudio original do Asterisk. Em outras palavras, estaremos entregando à Azure exatamente os mesmos bytes PCM que o Asterisk enviou, no mesmo ritmo e formato. Isso deve maximizar a inteligibilidade e a qualidade do reconhecimento contínuo, limitado apenas pela qualidade intrínseca da captação de áudio telefônico.
+
+Referências Utilizadas:
+	•	Especificação do protocolo AudioSocket (Asterisk) – formato de áudio e tipos de pacotes ￼ ￼.
+	•	Discussões na comunidade Asterisk sobre AudioSocket – tamanho de chunk (320 bytes a cada 20ms) e necessidade de áudio 16-bit/8k mono sem codificação ￼.
+	•	Documentação da Microsoft Azure Speech SDK – formatos de áudio suportados e configuração do AudioStreamFormat (PCM 16-bit, 8k ou 16k) ￼ ￼.
+
+
+Sgestão de implementação:
+
+#!/usr/bin/env python3
+import os
+import socket
+import threading
+import time
+import wave
+from dotenv import load_dotenv
+import azure.cognitiveservices.speech as speechsdk
+
+load_dotenv()
+
+# Configurações gerais
+SAMPLE_RATE = 8000
+CHANNELS = 1
+DEBUG_DIR = "audio/debug"
+os.makedirs(DEBUG_DIR, exist_ok=True)
+
+# Parser TLV AudioSocket
+def read_tlv_packet(conn):
+    header = conn.recv(3)
+    if len(header) < 3:
+        return None, None
+
+    packet_type = header[0]
+    length = int.from_bytes(header[1:3], "big")
+
+    payload = b''
+    while len(payload) < length:
+        chunk = conn.recv(length - len(payload))
+        if not chunk:
+            return None, None
+        payload += chunk
+
+    return packet_type, payload
+
+# Callbacks do Azure Speech SDK
+class SpeechCallbacks:
+    def __init__(self):
+        self.recognition_results = []
+
+    def log_event(self, event_type, data=None):
+        timestamp = time.strftime('%H:%M:%S')
+        print(f"[{timestamp}] {event_type}: {data}")
+
+    def on_recognized(self, evt):
+        if evt.result.reason == speechsdk.ResultReason.RecognizedSpeech:
+            text = evt.result.text
+            self.log_event("RECOGNIZED", text)
+            self.recognition_results.append(text)
+        elif evt.result.reason == speechsdk.ResultReason.NoMatch:
+            self.log_event("NO_MATCH", evt.result.no_match_details)
+
+    def register_callbacks(self, recognizer):
+        recognizer.recognized.connect(self.on_recognized)
+        recognizer.canceled.connect(lambda evt: self.log_event("CANCELED", evt.reason))
+        recognizer.session_started.connect(lambda evt: self.log_event("SESSION_STARTED", evt.session_id))
+        recognizer.session_stopped.connect(lambda evt: self.log_event("SESSION_STOPPED", evt.session_id))
+
+# Verificação das credenciais Azure
+def check_azure_credentials():
+    key = os.getenv("AZURE_SPEECH_KEY")
+    region = os.getenv("AZURE_SPEECH_REGION")
+    if not key or not region:
+        print("Configure as credenciais do Azure!")
+        return False
+    print(f"Azure configurado para região: {region}")
+    return True
+
+# Recebe áudio do socket e envia para Azure
+def socket_audio_receiver(push_stream):
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.bind(("0.0.0.0", 8080))
+    server_socket.listen(1)
+
+    print("Aguardando conexão na porta 8080...")
+    conn, addr = server_socket.accept()
+    print(f"Conexão recebida de: {addr}")
+
+    audio_buffer = []
+    try:
+        while True:
+            packet_type, payload = read_tlv_packet(conn)
+            if packet_type is None:
+                break
+
+            if packet_type == 0x10:  # áudio
+                audio_buffer.append(payload)
+                push_stream.write(payload)
+
+            elif packet_type == 0x01:  # UUID
+                print(f"UUID recebido: {payload.hex()}")
+
+            elif packet_type == 0x00:  # Fim da transmissão
+                print("Pacote de término recebido.")
+                break
+
+    except Exception as e:
+        print(f"Erro ao receber dados: {e}")
+    finally:
+        conn.close()
+        push_stream.close()
+
+        audio_data = b''.join(audio_buffer)
+        filename = os.path.join(DEBUG_DIR, "audio_recebido_socket.wav")
+        with wave.open(filename, 'wb') as wf:
+            wf.setnchannels(CHANNELS)
+            wf.setsampwidth(2)  # 16-bit
+            wf.setframerate(SAMPLE_RATE)
+            wf.writeframes(audio_data)
+
+        print(f"Áudio salvo em {filename}")
+
+# Função principal
+def main():
+    if not check_azure_credentials():
+        return
+
+    callbacks = SpeechCallbacks()
+
+    speech_config = speechsdk.SpeechConfig(
+        subscription=os.getenv("AZURE_SPEECH_KEY"),
+        region=os.getenv("AZURE_SPEECH_REGION")
+    )
+    speech_config.speech_recognition_language = "pt-BR"
+
+    audio_format = speechsdk.audio.AudioStreamFormat(
+        samples_per_second=SAMPLE_RATE,
+        bits_per_sample=16,
+        channels=CHANNELS
+    )
+
+    push_stream = speechsdk.audio.PushAudioInputStream(stream_format=audio_format)
+    audio_config = speechsdk.audio.AudioConfig(stream=push_stream)
+
+    recognizer = speechsdk.SpeechRecognizer(speech_config, audio_config)
+    callbacks.register_callbacks(recognizer)
+
+    recognizer.start_continuous_recognition_async()
+
+    receiver_thread = threading.Thread(target=socket_audio_receiver, args=(push_stream,))
+    receiver_thread.start()
+
+    print("Reconhecendo áudio recebido via socket...")
+    print("Pressione Ctrl+C para finalizar.")
+
+    try:
+        while receiver_thread.is_alive():
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        print("Interrompido pelo usuário.")
+    finally:
+        recognizer.stop_continuous_recognition_async()
+        receiver_thread.join()
+
+    print("Resultados reconhecidos:")
+    for text in callbacks.recognition_results:
+        print(f"-> {text}")
+
+if __name__ == "__main__":
+    main()
+
+

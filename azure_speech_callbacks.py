@@ -1,8 +1,9 @@
 """
-Módulo de callbacks do Azure Speech SDK - Versão otimizada para diagnóstico.
+Módulo de callbacks do Azure Speech SDK - Versão otimizada para AudioSocket.
 
-Este módulo contém callbacks básicos para interação com o Azure Speech SDK,
-focando na detecção e diagnóstico dos eventos de reconhecimento.
+Este módulo contém callbacks para interação com o Azure Speech SDK,
+com foco na correta detecção e processamento de voz a partir de dados de áudio PCM
+recebidos via protocolo AudioSocket.
 """
 
 import asyncio
@@ -17,10 +18,11 @@ logger = logging.getLogger(__name__)
 
 class SpeechCallbacks:
     """
-    Classe simplificada para gerenciar callbacks do Azure Speech SDK.
+    Classe para gerenciar callbacks do Azure Speech SDK.
     
-    Esta versão mantém apenas o essencial para detecção de voz e 
-    processamento de texto reconhecido, com melhor diagnóstico.
+    Esta implementação foi otimizada para trabalhar com o formato de áudio do AudioSocket
+    (PCM 16-bit, 8kHz, mono) e garantir que o Azure Speech SDK processe corretamente
+    os dados de áudio.
     """
     
     def __init__(self, call_id: str, 
@@ -207,6 +209,7 @@ class SpeechCallbacks:
     def on_canceled(self, evt):
         """Callback quando o reconhecimento é cancelado."""
         logger.error(f"[{self.call_id}] Reconhecimento cancelado: {evt.reason}")
+        
         if evt.reason == speechsdk.CancellationReason.Error:
             logger.error(f"[{self.call_id}] Erro: {evt.error_details}")
             
@@ -229,6 +232,9 @@ class SpeechCallbacks:
     def add_audio_chunk(self, chunk: bytes):
         """
         Adiciona um chunk de áudio ao buffer quando estiver coletando.
+        
+        Importante: O chunk deve ser puramente dados de áudio PCM (sem cabeçalhos TLV),
+        tipicamente 320 bytes representando 20ms de áudio em 8kHz/16-bit/mono.
         
         Returns:
             True se o áudio estiver sendo coletado, False caso contrário
