@@ -45,7 +45,6 @@ class SpeechCallbacks:
         
         # Timestamps para cálculos de duração
         self.speech_start_time = None
-        self.last_timeout_task = None
         
         # Função de processamento a ser definida pelo chamador
         self.process_callback: Optional[Callable] = None
@@ -85,11 +84,6 @@ class SpeechCallbacks:
             logger.error(f"[{self.call_id}] Erro ao logar detalhes do evento recognized: {e}")
         
         logger.info(f"[{self.call_id}] Estado do buffer: {len(self.audio_buffer)} frames, collecting={self.collecting_audio}")
-        
-        # Cancelar qualquer tarefa de timeout pendente
-        if self.last_timeout_task and not self.last_timeout_task.done():
-            logger.info(f"[{self.call_id}] Cancelando tarefa de timeout - recognized chegou normalmente")
-            self.last_timeout_task.cancel()
         
         # Log detalhado de propriedades do resultado para diagnóstico
         if hasattr(evt.result, 'properties'):
@@ -191,73 +185,10 @@ class SpeechCallbacks:
             logger.warning(f"[{self.call_id}] Fim de fala detectado, mas sem dados para processar")
             return
         
-        # Garantir que processamos diretamente se não houver recognized
-        logger.info(f"[{self.call_id}] Iniciando timer para processamento manual caso recognized não dispare (buffer: {len(self.audio_buffer)} frames)")
-        
-        # IMPORTANTE: Salvar snapshot do buffer atual para usar no timeout
-        # Isso evita que o buffer seja modificado entre o fim da fala e o timeout
-        current_buffer = list(self.audio_buffer)
-        
-        # Verificar se on_recognized será chamado
-        # CORREÇÃO: Criamos uma função para iniciar a tarefa corretamente 
-        # e armazenamos a referência a ela para poder cancelá-la se o recognized acontecer
-        self.start_recognition_timeout(current_buffer)
-        
-        # Apenas marcar que a coleta terminou
-        # O áudio será processado quando o evento on_recognized for disparado
-        # ou após o timeout se o evento não ocorrer
+        # Marcar que a coleta terminou - agora vamos aguardar pelo evento on_recognized
+        # sem intervenção manual
+        logger.info(f"[{self.call_id}] Aguardando evento on_recognized para processar o áudio (buffer: {len(self.audio_buffer)} frames)")
         self.collecting_audio = False
-    
-    def start_recognition_timeout(self, current_buffer):
-        """Inicia uma tarefa de timeout para verificar se o evento recognized ocorreu."""
-        async def check_recognition_timeout(buffer_snapshot):
-            try:
-                # Aguardar tempo reduzido para melhorar a responsividade
-                await asyncio.sleep(2.0)  # Esperar 2 segundos
-                
-                # Verificar se o evento recognized já foi disparado (buffer foi limpo)
-                if len(self.audio_buffer) == 0:
-                    logger.info(f"[{self.call_id}] Buffer foi limpo, RECOGNIZED já foi processado")
-                    return
-                
-                # Se chegamos aqui, o evento recognized não foi disparado
-                logger.warning(f"[{self.call_id}] TIMEOUT: on_recognized não foi disparado após 2s. Processando manualmente.")
-                
-                # Processar o áudio diretamente
-                if self.process_callback:
-                    # Usar o snapshot do buffer que foi salvo no momento do on_speech_end_detected
-                    # Isso garante que processamos o áudio correto mesmo se o buffer foi modificado
-                    audio_data = b"".join(buffer_snapshot)
-                    
-                    logger.info(f"[{self.call_id}] Processando áudio manualmente: {len(audio_data)} bytes")
-                    
-                    # Executar callback
-                    loop = asyncio.get_event_loop()
-                    future = asyncio.run_coroutine_threadsafe(
-                        self.process_callback("", audio_data),
-                        loop
-                    )
-                    
-                    # Aguardar conclusão
-                    try:
-                        future.result(timeout=5.0)
-                        logger.info(f"[{self.call_id}] Processamento manual após timeout concluído com sucesso")
-                    except Exception as e:
-                        logger.error(f"[{self.call_id}] Erro no processamento manual após timeout: {e}")
-                    
-                    # Limpar buffer após processamento
-                    self.audio_buffer = []
-                else:
-                    logger.error(f"[{self.call_id}] Não foi possível processar após timeout: process_callback não definido")
-            except asyncio.CancelledError:
-                # Tarefa foi cancelada porque o recognized foi disparado
-                logger.info(f"[{self.call_id}] Tarefa de timeout cancelada, recognized foi disparado normalmente")
-            except Exception as e:
-                logger.error(f"[{self.call_id}] Erro na tarefa de timeout: {e}")
-        
-        # Criar e armazenar a tarefa
-        loop = asyncio.get_event_loop()
-        self.last_timeout_task = asyncio.run_coroutine_threadsafe(check_recognition_timeout(current_buffer), loop)
     
     def on_recognizing(self, evt):
         """Callback para resultados parciais de reconhecimento."""
