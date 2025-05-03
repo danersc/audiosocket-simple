@@ -1,12 +1,15 @@
 # audiosocket_handler.py (versão consolidada e simplificada)
 
 import asyncio
+import json
 import logging
 import struct
+from enum import Enum
 
 import azure.cognitiveservices.speech as speechsdk
 from azure_speech_callbacks import SpeechCallbacks
 import os
+import time
 import wave
 import uuid
 from session_manager import SessionManager
@@ -17,13 +20,47 @@ from utils.call_logger import CallLoggerManager
 SAMPLE_RATE = 8000
 CHANNELS = 1
 DEBUG_DIR = "audio/debug"
+TERMINATE_CHECK_INTERVAL = 1
 os.makedirs(DEBUG_DIR, exist_ok=True)
+
+class VoiceDetectionType(Enum):
+    WEBRTCVAD = "webrtcvad"
+    AZURE_SPEECH = "azure_speech"
 
 logger = logging.getLogger(__name__)
 session_manager = SessionManager()
 
 # Variável global para armazenar o extension_manager
 extension_manager = None
+
+try:
+    with open('config.json', 'r') as f:
+        config = json.load(f)
+        SILENCE_THRESHOLD_SECONDS = config['system'].get('silence_threshold_seconds', 2.0)
+        RESIDENT_MAX_SILENCE_SECONDS = config['system'].get('resident_max_silence_seconds', 45.0)
+        TRANSMISSION_DELAY_MS = config['audio'].get('transmission_delay_ms', 20) / 1000  # Convertido para segundos
+        POST_AUDIO_DELAY_SECONDS = config['audio'].get('post_audio_delay_seconds', 0.5)
+        DISCARD_BUFFER_FRAMES = config['audio'].get('discard_buffer_frames', 25)
+        GOODBYE_DELAY_SECONDS = config['system'].get('goodbye_delay_seconds',
+                                                     3.0)  # Tempo para ouvir mensagem de despedida
+
+        # Configuração de detecção de voz (webrtcvad ou azure_speech)
+        VOICE_DETECTION_TYPE = VoiceDetectionType(config['system'].get('voice_detection_type', 'webrtcvad'))
+        # Configurações específicas para Azure Speech
+        AZURE_SPEECH_SEGMENT_TIMEOUT_MS = config['system'].get('azure_speech_segment_timeout_ms', 800)
+
+        logger.info(
+            f"Configurações carregadas: silence={SILENCE_THRESHOLD_SECONDS}s, resident_max_silence={RESIDENT_MAX_SILENCE_SECONDS}s, transmission_delay={TRANSMISSION_DELAY_MS}s, post_audio_delay={POST_AUDIO_DELAY_SECONDS}s, discard_buffer={DISCARD_BUFFER_FRAMES} frames, goodbye_delay={GOODBYE_DELAY_SECONDS}s, voice_detection={VOICE_DETECTION_TYPE.value}")
+except Exception as e:
+    logger.warning(f"Erro ao carregar config.json, usando valores padrão: {e}")
+    SILENCE_THRESHOLD_SECONDS = 2.0
+    RESIDENT_MAX_SILENCE_SECONDS = 45.0
+    TRANSMISSION_DELAY_MS = 0.02
+    POST_AUDIO_DELAY_SECONDS = 0.5
+    DISCARD_BUFFER_FRAMES = 25
+    GOODBYE_DELAY_SECONDS = 3.0
+    VOICE_DETECTION_TYPE = VoiceDetectionType.WEBRTCVAD
+    AZURE_SPEECH_SEGMENT_TIMEOUT_MS = 800
 
 def set_extension_manager(manager):
     """
@@ -38,6 +75,119 @@ async def read_tlv_packet(reader):
     length = int.from_bytes(header[1:3], "big")
     payload = await reader.readexactly(length)
     return packet_type, payload
+
+async def check_terminate_flag(session, call_id, role, call_logger=None):
+    event = session.terminate_visitor_event if role == "visitante" else session.terminate_resident_event
+
+    try:
+        await asyncio.wait_for(event.wait(), timeout=TERMINATE_CHECK_INTERVAL)
+        logger.info(f"[{call_id}] Sinal de terminação detectado para {role}")
+        if call_logger:
+            call_logger.log_event("TERMINATION_SIGNAL_DETECTED", {
+                "role": role,
+                "timestamp": time.time()
+            })
+        return True
+    except asyncio.TimeoutError:
+        return False
+
+
+async def send_goodbye_and_terminate(writer, session, call_id, role, call_logger=None):
+    """
+    Envia uma mensagem de despedida final e encerra a conexão.
+    """
+    try:
+        # Obter mensagem de despedida baseada na configuração
+        # Decisão baseada no papel e no estado da conversa
+        if role == "visitante":
+            # Verificar se estamos no teste específico com a mensagem de finalização
+            if session.intent_data.get("test_hangup") == True:
+                goodbye_msg = "A chamada com o morador foi finalizada. Obrigado por utilizar nosso sistema."
+            elif session.intent_data.get("authorization_result") == "authorized":
+                goodbye_msg = config.get('call_termination', {}).get('goodbye_messages', {}).get('visitor', {}).get(
+                    'authorized', "Sua entrada foi autorizada. Obrigado por utilizar nossa portaria inteligente.")
+            elif session.intent_data.get("authorization_result") == "denied":
+                goodbye_msg = config.get('call_termination', {}).get('goodbye_messages', {}).get('visitor', {}).get(
+                    'denied', "Sua entrada não foi autorizada. Obrigado por utilizar nossa portaria inteligente.")
+            else:
+                goodbye_msg = config.get('call_termination', {}).get('goodbye_messages', {}).get('visitor', {}).get(
+                    'default', "Obrigado por utilizar nossa portaria inteligente. Até a próxima!")
+        else:
+            goodbye_msg = config.get('call_termination', {}).get('goodbye_messages', {}).get('resident', {}).get(
+                'default', "Obrigado pela sua resposta. Encerrando a chamada.")
+
+        # Registrar evento de envio de despedida
+        if call_logger:
+            call_logger.log_event("SENDING_GOODBYE", {
+                "role": role,
+                "message": goodbye_msg
+            })
+
+        # Sintetizar a mensagem de despedida e enviar diretamente (sem enfileirar)
+        logger.info(f"[{call_id}] Enviando mensagem de despedida diretamente para {role}: {goodbye_msg}")
+        audio_resposta = await sintetizar_fala_async(goodbye_msg)
+
+        if audio_resposta:
+            # Enviar o áudio diretamente
+            await enviar_audio(writer, audio_resposta, call_id=call_id, origem=role.capitalize())
+
+            # Registrar evento de envio bem-sucedido
+            if call_logger:
+                call_logger.log_event("GOODBYE_SENT_SUCCESSFULLY", {
+                    "role": role,
+                    "message": goodbye_msg,
+                    "audio_size": len(audio_resposta)
+                })
+
+            # Aguardar um tempo para que a mensagem seja ouvida
+            logger.info(f"[{call_id}] Aguardando {GOODBYE_DELAY_SECONDS}s para o {role} ouvir a despedida")
+            await asyncio.sleep(GOODBYE_DELAY_SECONDS)
+
+            # Verificar se é o teste específico com a mensagem de finalização
+            if role == "visitante" and session.intent_data.get("test_hangup") == True:
+                # Enviar KIND_HANGUP explicitamente para finalizar a conexão
+                logger.info(f"[{call_id}] Enviando KIND_HANGUP para finalizar a conexão ativamente")
+                try:
+                    # Enviar KIND_HANGUP (0x00) com payload length 0
+                    writer.write(struct.pack('>B H', 0x00, 0))
+                    await writer.drain()
+                    if call_logger:
+                        call_logger.log_event("HANGUP_SENT", {
+                            "role": role,
+                            "reason": "active_termination_test"
+                        })
+                except Exception as hangup_error:
+                    logger.error(f"[{call_id}] Erro ao enviar KIND_HANGUP: {hangup_error}")
+                    if call_logger:
+                        call_logger.log_error("HANGUP_SEND_FAILED",
+                                              f"Erro ao enviar KIND_HANGUP",
+                                              {"error": str(hangup_error)})
+        else:
+            logger.error(f"[{call_id}] Falha ao sintetizar mensagem de despedida para {role}")
+            if call_logger:
+                call_logger.log_error("GOODBYE_SYNTHESIS_FAILED",
+                                      f"Falha ao sintetizar mensagem de despedida para {role}",
+                                      {"message": goodbye_msg})
+
+        # Fechar a conexão
+        if call_logger:
+            call_logger.log_event("CONNECTION_CLOSING", {
+                "role": role,
+                "reason": "controlled_termination"
+            })
+
+        writer.close()
+        await writer.wait_closed()
+        logger.info(f"[{call_id}] Conexão com {role} encerrada com sucesso")
+
+    except Exception as e:
+        logger.error(f"[{call_id}] Erro ao enviar despedida para {role}: {e}")
+        # Ainda assim, tentar fechar a conexão em caso de erro
+        try:
+            writer.close()
+            await writer.wait_closed()
+        except:
+            pass
 
 async def iniciar_servidor_audiosocket_visitante(reader, writer):
     header = await reader.readexactly(3)
@@ -77,6 +227,20 @@ async def iniciar_servidor_audiosocket_visitante(reader, writer):
     task2 = asyncio.create_task(enviar_mensagens_visitante(writer, call_id))
 
     await asyncio.wait([task1, task2], return_when=asyncio.FIRST_COMPLETED)
+
+    session = session_manager.get_session(call_id)
+
+    while True:
+        if await check_terminate_flag(session, call_id, "visitante"):
+            logger.info(f"[{call_id}] Encerrando sessão do visitante.")
+            await send_goodbye_and_terminate(writer, call_id, "visitante")
+            break
+        done, pending = await asyncio.wait([task1, task2], timeout=TERMINATE_CHECK_INTERVAL,
+                                           return_when=asyncio.FIRST_COMPLETED)
+
+        if done:
+            logger.info(f"[{call_id}] Uma das tarefas do visitante foi encerrada.")
+            break
 
     push_stream.close()
     recognizer.stop_continuous_recognition_async()
@@ -134,6 +298,22 @@ async def iniciar_servidor_audiosocket_morador(reader, writer):
 
     task1 = asyncio.create_task(receber_audio_morador(reader, call_id))
     task2 = asyncio.create_task(enviar_mensagens_morador(writer, call_id))
+
+    session = session_manager.get_session(call_id)
+
+    while True:
+        if await check_terminate_flag(session, call_id, "morador"):
+            logger.info(f"[{call_id}] Encerrando sessão do morador.")
+            await send_goodbye_and_terminate(writer, call_id, "morador")
+            break
+
+        done, pending = await asyncio.wait([task1, task2], timeout=TERMINATE_CHECK_INTERVAL,
+                                           return_when=asyncio.FIRST_COMPLETED)
+
+        if done:
+            logger.info(f"[{call_id}] Uma das tarefas do morador foi encerrada.")
+            break
+
 
     await asyncio.wait([task1, task2], return_when=asyncio.FIRST_COMPLETED)
 

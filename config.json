@@ -1,12 +1,44 @@
 {
+    "greeting": {
+        "message": "Condom\u00ednio Apoena, em que posso ajudar?",
+        "voice": "pt-BR-AntonioNeural",
+        "delay_seconds": 2
+    },
     "system": {
+        "default_state": "STANDBY",
         "silence_threshold_seconds": 2.0,
+        "max_transaction_time_seconds": 60,
+        "goodbye_delay_seconds": 3.0,
+        "voice_detection_type": "azure_speech",
+        "azure_speech_segment_timeout_ms": 1000,
+        "azure_speech_visitor_timeout_ms": 1000,
+        "azure_speech_resident_timeout_ms": 600,
         "resident_max_silence_seconds": 45.0,
-        "azure_speech_segment_timeout_ms": 1000
+        "azure_speech_sensitivity": 0.7
     },
     "audio": {
+        "sample_rate": 8000,
+        "channels": 1,
+        "format": "SLIN",
+        "chunk_size": 320,
         "transmission_delay_ms": 20,
         "post_audio_delay_seconds": 0.5,
-        "discard_buffer_frames": 25
+        "discard_buffer_frames": 25,
+        "anti_echo_delay_ms": 800
+    },
+    "call_termination": {
+        "enabled": true,
+        "goodbye_messages": {
+            "visitor": {
+                "authorized_entrega": "Sua entrega foi autorizada pelo morador. Obrigado por utilizar nossa portaria inteligente.",
+                "authorized_visita": "Sua visita foi autorizada pelo morador. Obrigado por utilizar nossa portaria inteligente.",
+                "authorized": "Sua entrada foi autorizada pelo morador. Obrigado por utilizar nossa portaria inteligente.",
+                "denied": "Sua entrada n\u00e3o foi autorizada pelo morador. Obrigado por utilizar nossa portaria inteligente.",
+                "default": "Obrigado por utilizar nossa portaria inteligente. At\u00e9 logo."
+            },
+            "resident": {
+                "default": "Obrigado pela sua resposta. Encerrando a chamada."
+            }
+        }
     }
 }
