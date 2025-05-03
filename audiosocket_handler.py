@@ -40,3 +40,14 @@ async def iniciar_servidor_audiosocket_visitante(reader, writer):
     finally:
         push_stream.close()
         recognizer.stop_continuous_recognition_async()
+
+
+async def iniciar_servidor_audiosocket_morador(reader, writer):
+    print("Conexão recebida do morador (ignorada nesta versão de teste).")
+    writer.close()
+    await writer.wait_closed()
+
+
+def set_extension_manager(ext_manager):
+    global extension_manager
+    extension_manager = ext_manager
