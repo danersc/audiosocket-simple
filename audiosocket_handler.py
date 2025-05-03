@@ -3,6 +3,7 @@ import logging
 import socket
 import azure.cognitiveservices.speech as speechsdk
 from azure_speech_callbacks import SpeechCallbacks
+import os
 
 SAMPLE_RATE = 8000
 CHANNELS = 1
