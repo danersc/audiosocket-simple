@@ -1,10 +1,14 @@
 import asyncio
 import logging
 import azure.cognitiveservices.speech as speechsdk
+from dotenv import load_dotenv
+
 from azure_speech_callbacks import SpeechCallbacks
 import os
 import wave
 from session_manager import SessionManager  # <- importado aqui para usar após transcrição
+
+load_dotenv()
 
 SAMPLE_RATE = 8000
 CHANNELS = 1
