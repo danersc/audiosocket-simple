@@ -7,6 +7,8 @@ import struct
 from enum import Enum
 
 import azure.cognitiveservices.speech as speechsdk
+from dotenv import load_dotenv
+
 from azure_speech_callbacks import SpeechCallbacks
 import os
 import time
@@ -16,6 +18,8 @@ from session_manager import SessionManager
 from extensions.resource_manager import resource_manager
 from speech_service import sintetizar_fala_async, transcrever_audio_async
 from utils.call_logger import CallLoggerManager
+
+load_dotenv()
 
 SAMPLE_RATE = 8000
 CHANNELS = 1
