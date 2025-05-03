@@ -21,6 +21,16 @@ os.makedirs(DEBUG_DIR, exist_ok=True)
 logger = logging.getLogger(__name__)
 session_manager = SessionManager()
 
+# Variável global para armazenar o extension_manager
+extension_manager = None
+
+def set_extension_manager(manager):
+    """
+    Define o extension_manager global para ser usado pelo handler.
+    """
+    global extension_manager
+    extension_manager = manager
+
 async def read_tlv_packet(reader):
     header = await reader.readexactly(3)
     packet_type = header[0]
