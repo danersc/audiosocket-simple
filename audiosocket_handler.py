@@ -620,7 +620,7 @@ async def receber_audio_visitante_azure_speech(reader: asyncio.StreamReader, cal
     # Criar e configurar o gerenciador de callbacks
     speech_callbacks = SpeechCallbacks(call_id, is_visitor=True, call_logger=call_logger)
     speech_callbacks.set_process_callback(process_recognized_text)
-    speech_callbacks.register_callbacks(recognizer)
+    speech_callbacks.register_callbacks(recognizer, speech_config)
     
     # Iniciar o reconhecimento contínuo
     recognizer.start_continuous_recognition_async()
@@ -1402,7 +1402,7 @@ async def receber_audio_morador_azure_speech(reader: asyncio.StreamReader, call_
     # Criar e configurar o gerenciador de callbacks
     resident_speech_callbacks = SpeechCallbacks(call_id, is_visitor=False, call_logger=call_logger)
     resident_speech_callbacks.set_process_callback(process_recognized_text)
-    resident_speech_callbacks.register_callbacks(recognizer)
+    resident_speech_callbacks.register_callbacks(recognizer, speech_config)
     
     # Salvar na sessão para acessar de outras partes do código
     session.resident_speech_callbacks = resident_speech_callbacks
