@@ -180,6 +180,30 @@ class SpeechCallbacks:
         if not self.collecting_audio or len(self.audio_buffer) == 0:
             logger.warning(f"[{self.call_id}] Fim de fala detectado, mas sem dados válidos para processar (collecting={self.collecting_audio}, buffer_size={len(self.audio_buffer)})")
             return
+        
+        # Salvar o áudio capturado em um arquivo para análise
+        try:
+            import os
+            import hashlib
+            import time
+            
+            # Criar diretório audio/debug se não existir
+            debug_dir = os.path.join("audio", "debug")
+            os.makedirs(debug_dir, exist_ok=True)
+            
+            # Gerar nome de arquivo único baseado no timestamp e call_id
+            timestamp = int(time.time())
+            audio_data = b"".join(self.audio_buffer)
+            file_hash = hashlib.md5(f"{self.call_id}_{timestamp}".encode()).hexdigest()[:16]
+            file_path = os.path.join(debug_dir, f"{file_hash}_{role}.slin")
+            
+            # Salvar o arquivo
+            with open(file_path, "wb") as f:
+                f.write(audio_data)
+            
+            logger.info(f"[{self.call_id}] Áudio salvo para análise: {file_path} ({len(audio_data)} bytes)")
+        except Exception as e:
+            logger.error(f"[{self.call_id}] Erro ao salvar áudio para debug: {e}")
             
         # Apenas marcar que a coleta terminou
         # O áudio será processado quando o evento on_recognized for disparado
@@ -204,6 +228,32 @@ class SpeechCallbacks:
         logger.error(f"[{self.call_id}] Reconhecimento Azure Speech cancelado: {evt.reason}")
         if evt.reason == speechsdk.CancellationReason.Error:
             logger.error(f"[{self.call_id}] Erro no Azure Speech: {evt.error_details}")
+            
+            # Se temos dados de áudio quando ocorreu um erro, vamos salvar para diagnóstico
+            if hasattr(self, 'audio_buffer') and len(self.audio_buffer) > 0:
+                try:
+                    import os
+                    import hashlib
+                    import time
+                    
+                    # Criar diretório audio/debug se não existir
+                    debug_dir = os.path.join("audio", "debug")
+                    os.makedirs(debug_dir, exist_ok=True)
+                    
+                    # Gerar nome de arquivo único para o erro
+                    timestamp = int(time.time())
+                    audio_data = b"".join(self.audio_buffer)
+                    role = "visitante" if self.is_visitor else "morador"
+                    file_hash = hashlib.md5(f"{self.call_id}_{timestamp}_error".encode()).hexdigest()[:16]
+                    file_path = os.path.join(debug_dir, f"{file_hash}_error_{role}.slin")
+                    
+                    # Salvar o arquivo
+                    with open(file_path, "wb") as f:
+                        f.write(audio_data)
+                    
+                    logger.info(f"[{self.call_id}] Áudio salvo após erro: {file_path} ({len(audio_data)} bytes)")
+                except Exception as e:
+                    logger.error(f"[{self.call_id}] Erro ao salvar áudio de erro: {e}")
     
     def add_audio_chunk(self, chunk: bytes):
         """
@@ -270,7 +320,19 @@ class SpeechCallbacks:
         recognizer.session_stopped.connect(self.on_session_stopped)
         recognizer.canceled.connect(self.on_canceled)
         
+        # Registramos o reconhecedor para usar em outras funções, se necessário
+        self.recognizer = recognizer
+        
         logger.info(f"[{self.call_id}] Callbacks registrados para {'visitante' if self.is_visitor else 'morador'}")
+        
+        # Logar as propriedades do Azure Speech para depuração
+        try:
+            logger.info(f"[{self.call_id}] Configurações do Azure Speech:")
+            if hasattr(recognizer, 'properties'):
+                for key in recognizer.properties:
+                    logger.info(f"[{self.call_id}]   - {key}: {recognizer.properties[key]}")
+        except Exception as e:
+            logger.error(f"[{self.call_id}] Erro ao logar configurações: {e}")
     
     def mark_ia_audio_sent(self):
         """
