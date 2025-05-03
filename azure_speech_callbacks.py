@@ -241,7 +241,13 @@ class SpeechCallbacks:
         logger.info(f"[{self.call_id}] Fim de fala do {role} detectado")
         
         if self.call_logger:
-            self.call_logger.log_speech_ended(0, is_visitor=self.is_visitor)
+            # Calcular duração se possível
+            duration_ms = 0
+            if hasattr(self, 'speech_start_time') and self.speech_start_time:
+                duration_ms = (time.time() - self.speech_start_time) * 1000
+                logger.info(f"[{self.call_id}] Duração da fala: {duration_ms:.1f}ms")
+            
+            self.call_logger.log_speech_ended(duration_ms, is_visitor=self.is_visitor)
         
         # Verificar se temos dados válidos para processar
         if not self.collecting_audio or len(self.audio_buffer) == 0:
@@ -261,6 +267,7 @@ class SpeechCallbacks:
             # Gerar nome de arquivo único baseado no timestamp e call_id
             timestamp = int(time.time())
             audio_data = b"".join(self.audio_buffer)
+            audio_size = len(audio_data)
             file_hash = hashlib.md5(f"{self.call_id}_{timestamp}".encode()).hexdigest()[:16]
             file_path = os.path.join(debug_dir, f"{file_hash}_{role}.slin")
             
@@ -268,12 +275,50 @@ class SpeechCallbacks:
             with open(file_path, "wb") as f:
                 f.write(audio_data)
             
-            logger.info(f"[{self.call_id}] Áudio salvo para análise: {file_path} ({len(audio_data)} bytes)")
+            logger.info(f"[{self.call_id}] Áudio salvo para análise: {file_path} ({audio_size} bytes)")
+            
+            # IMPORTANTE: Verificar se o evento recognized está sendo disparado
+            # dentro de um tempo razoável. Se não for, processar o áudio diretamente.
+            
+            # Programar um temporizador para verificar se o on_recognized foi chamado
+            # após 3 segundos do fim da fala
+            async def check_recognition_timeout():
+                await asyncio.sleep(3.0)  # Esperar 3 segundos
+                
+                # Se ainda temos o mesmo áudio no buffer, o evento on_recognized não foi disparado
+                if self.collecting_audio == False and len(self.audio_buffer) > 0:
+                    logger.warning(f"[{self.call_id}] Timeout: on_recognized não foi disparado após 3s. Processando áudio diretamente.")
+                    
+                    # Salvar para diagnóstico com marcação de timeout
+                    timeout_file_path = os.path.join(debug_dir, f"{file_hash}_timeout_{role}.slin")
+                    with open(timeout_file_path, "wb") as f:
+                        f.write(audio_data)
+                    
+                    # Processar o áudio mesmo sem texto reconhecido
+                    if self.process_callback:
+                        logger.info(f"[{self.call_id}] Processando áudio após timeout: {audio_size} bytes")
+                        loop = asyncio.get_event_loop()
+                        future = asyncio.run_coroutine_threadsafe(
+                            self.process_callback("", audio_data),  # Texto vazio para processamento alternativo
+                            loop
+                        )
+                        future.add_done_callback(lambda f: 
+                            logger.info(f"[{self.call_id}] Processamento após timeout concluído com sucesso") if not f.exception() 
+                            else logger.error(f"[{self.call_id}] Erro no processamento após timeout: {f.exception()}")
+                        )
+                        
+                        # Limpar buffer após processamento
+                        self.audio_buffer = []
+            
+            # Iniciar o temporizador de timeout
+            asyncio.create_task(check_recognition_timeout())
+            
         except Exception as e:
             logger.error(f"[{self.call_id}] Erro ao salvar áudio para debug: {e}")
             
         # Apenas marcar que a coleta terminou
         # O áudio será processado quando o evento on_recognized for disparado
+        # ou após o timeout se o evento não ocorrer
         self.collecting_audio = False
     
     def on_recognizing(self, evt):
@@ -318,9 +363,38 @@ class SpeechCallbacks:
                     with open(file_path, "wb") as f:
                         f.write(audio_data)
                     
+                    # Salvar detalhes do erro em um arquivo de texto
+                    error_txt_path = os.path.join(debug_dir, f"{file_hash}_error_{role}.txt")
+                    with open(error_txt_path, "w") as f:
+                        f.write(f"Erro: {evt.error_details}\n")
+                        f.write(f"Razão: {evt.reason}\n")
+                        f.write(f"Timestamp: {timestamp}\n")
+                        f.write(f"Tamanho do áudio: {len(audio_data)} bytes\n")
+                    
                     logger.info(f"[{self.call_id}] Áudio salvo após erro: {file_path} ({len(audio_data)} bytes)")
+                    logger.info(f"[{self.call_id}] Detalhes do erro salvos em: {error_txt_path}")
+                    
+                    # Processar o áudio mesmo com erro de reconhecimento
+                    if self.process_callback:
+                        logger.info(f"[{self.call_id}] Tentando processar áudio após erro: {len(audio_data)} bytes")
+                        loop = asyncio.get_event_loop()
+                        future = asyncio.run_coroutine_threadsafe(
+                            self.process_callback("", audio_data),  # Texto vazio para processamento alternativo
+                            loop
+                        )
+                        future.add_done_callback(lambda f: 
+                            logger.info(f"[{self.call_id}] Processamento após erro concluído com sucesso") if not f.exception() 
+                            else logger.error(f"[{self.call_id}] Erro no processamento após erro: {f.exception()}")
+                        )
+                        
+                        # Limpar buffer após processamento
+                        self.audio_buffer = []
                 except Exception as e:
                     logger.error(f"[{self.call_id}] Erro ao salvar áudio de erro: {e}")
+        elif evt.reason == speechsdk.CancellationReason.EndOfStream:
+            logger.info(f"[{self.call_id}] Reconhecimento cancelado: Fim do stream (comportamento normal)")
+        else:
+            logger.warning(f"[{self.call_id}] Reconhecimento cancelado com razão não tratada: {evt.reason}")
     
     def add_audio_chunk(self, chunk: bytes):
         """
@@ -392,14 +466,28 @@ class SpeechCallbacks:
         
         logger.info(f"[{self.call_id}] Callbacks registrados para {'visitante' if self.is_visitor else 'morador'}")
         
-        # Logar as propriedades do Azure Speech para depuração
+        # Logar informações do Azure Speech para depuração
         try:
-            logger.info(f"[{self.call_id}] Configurações do Azure Speech:")
-            if hasattr(recognizer, 'properties'):
-                for key in recognizer.properties:
-                    logger.info(f"[{self.call_id}]   - {key}: {recognizer.properties[key]}")
+            logger.info(f"[{self.call_id}] Configurações do Azure Speech inicializadas")
+            
+            # Registrar alguns valores importantes da configuração para diagnóstico
+            if hasattr(speech_config, '_impl'):
+                try:
+                    lang = speech_config._impl.get_property(speechsdk.PropertyId.SpeechServiceConnection_RecoLanguage)
+                    logger.info(f"[{self.call_id}] Idioma de reconhecimento: {lang}")
+                except:
+                    pass
+                    
+            # Registrar a conexão do reconhecedor
+            connection_id = "desconhecido"
+            try:
+                if hasattr(recognizer, 'session_id'):
+                    connection_id = recognizer.session_id
+                logger.info(f"[{self.call_id}] ID de sessão do reconhecedor: {connection_id}")
+            except:
+                pass
         except Exception as e:
-            logger.error(f"[{self.call_id}] Erro ao logar configurações: {e}")
+            logger.error(f"[{self.call_id}] Erro ao logar informações do reconhecedor: {e}")
     
     def mark_ia_audio_sent(self):
         """
