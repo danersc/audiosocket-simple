@@ -10,7 +10,7 @@
         "max_transaction_time_seconds": 60,
         "goodbye_delay_seconds": 3.0,
         "voice_detection_type": "azure_speech",
-        "azure_speech_segment_timeout_ms": 800,
+        "azure_speech_segment_timeout_ms": 600,
         "resident_max_silence_seconds": 45.0
     },
     "audio": {

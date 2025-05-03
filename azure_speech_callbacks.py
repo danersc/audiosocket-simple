@@ -234,8 +234,8 @@ class SpeechCallbacks:
             current_time = time.time()
             time_since_last_reset = current_time - self.last_end_reset_time
             
-            # O mesmo período de guarda usado para início de fala
-            ANTI_ECHO_GUARD_PERIOD = 1.5  # segundos
+            # REDUZIDO: Período de guarda mais curto para fim de fala (1.0s em vez de 1.5s)
+            ANTI_ECHO_GUARD_PERIOD = 1.0  # segundos
             
             if time_since_last_reset < ANTI_ECHO_GUARD_PERIOD:
                 logger.warning(f"[{self.call_id}] IGNORANDO fim de fala por estar muito próximo ao último evento "
@@ -257,16 +257,13 @@ class SpeechCallbacks:
         buffer_size = len(self.audio_buffer) if hasattr(self, 'audio_buffer') else 0
         logger.info(f"[{self.call_id}] Fim de fala do {role} detectado - collecting={self.collecting_audio}, buffer_size={buffer_size}")
         
-        # *** FILTRAGEM RIGOROSA DE EVENTOS DE FIM DE FALA ***
-        # Se não temos detecção de início de fala (collecting=False), vamos ser MUITO criteriosos
+        # *** FILTRAGEM MENOS RIGOROSA DE EVENTOS DE FIM DE FALA ***
+        # Se não temos detecção de início de fala (collecting=False), ainda podemos acionar via energia
         if not self.collecting_audio:
-            # Verificar se já tivemos alguma detecção de fala antes - Se não, isso é provavelmente um falso positivo
-            if not self.speech_detected:
-                logger.warning(f"[{self.call_id}] IGNORANDO fim de fala por não haver início de fala detectado anteriormente")
-                return
+            # MUDANÇA: Ao invés de ignorar completamente, tentar ativar a coleta se detectamos energia suficiente
             
-            # Verificar se temos algo no pre-buffer e se tem energia suficiente
-            if not hasattr(self, 'pre_buffer') or not self.pre_buffer or len(self.pre_buffer) < 10:  # Mínimo de 10 frames (~200ms)
+            # Verificar se temos algo no pre-buffer para usar
+            if not hasattr(self, 'pre_buffer') or not self.pre_buffer or len(self.pre_buffer) < 5:  # Mínimo reduzido para 5 frames (~100ms)
                 logger.warning(f"[{self.call_id}] IGNORANDO fim de fala - pre-buffer muito pequeno ou inexistente")
                 return
                 
@@ -274,8 +271,8 @@ class SpeechCallbacks:
             try:
                 import struct
                 
-                # Analisar apenas os últimos 10 frames para economia de processamento
-                frames_to_analyze = self.pre_buffer[-10:]
+                # Analisar frames para economia de processamento
+                frames_to_analyze = self.pre_buffer[-10:] if len(self.pre_buffer) >= 10 else self.pre_buffer
                 total_energy = 0
                 
                 for frame in frames_to_analyze:
@@ -284,17 +281,51 @@ class SpeechCallbacks:
                     total_energy += frame_energy
                 
                 avg_energy = total_energy / len(frames_to_analyze)
-                ENERGY_THRESHOLD = 800  # Threshold mais alto para confirmar que é fala real
+                # ENERGIA REDUZIDA: Threshold mais baixo para ser mais sensível
+                ENERGY_THRESHOLD = 500  # Reduzido de 800 para 500
                 
                 if avg_energy < ENERGY_THRESHOLD:
-                    logger.warning(f"[{self.call_id}] IGNORANDO fim de fala - energia muito baixa no pre-buffer ({avg_energy:.2f} < {ENERGY_THRESHOLD})")
-                    return
+                    # Se a energia for muito baixa, podemos tentar usar uma verificação mais longa
+                    # Verificar energia em todo o pre-buffer
+                    if len(self.pre_buffer) >= 20:  # Se temos ao menos 20 frames (~400ms)
+                        frames_to_analyze = self.pre_buffer
+                        total_energy = 0
+                        peak_energy = 0
+                        
+                        for frame in frames_to_analyze:
+                            samples = struct.unpack('<' + 'h' * (len(frame) // 2), frame)
+                            frame_energy = sum(sample ** 2 for sample in samples) / len(samples)
+                            total_energy += frame_energy
+                            peak_energy = max(peak_energy, frame_energy)
+                        
+                        avg_energy = total_energy / len(frames_to_analyze)
+                        
+                        # Verificar se houve pelo menos algum pico de energia
+                        if peak_energy > ENERGY_THRESHOLD * 1.5:
+                            logger.info(f"[{self.call_id}] Fim de fala CONFIRMADO por pico de energia no pre-buffer ({peak_energy:.2f} > {ENERGY_THRESHOLD*1.5})")
+                        else:
+                            logger.warning(f"[{self.call_id}] IGNORANDO fim de fala - energia muito baixa mesmo em todo pre-buffer ({avg_energy:.2f} < {ENERGY_THRESHOLD})")
+                            return
+                    else:
+                        logger.warning(f"[{self.call_id}] IGNORANDO fim de fala - energia muito baixa no pre-buffer ({avg_energy:.2f} < {ENERGY_THRESHOLD})")
+                        return
                     
                 logger.info(f"[{self.call_id}] Fim de fala CONFIRMADO por energia do áudio ({avg_energy:.2f} > {ENERGY_THRESHOLD})")
+                
+                # LÓGICA NOVA: Se chegamos aqui, temos energia suficiente, então ativamos a coleta
+                # mesmo que não tenha sido ativada antes
+                self.collecting_audio = True
+                self.speech_detected = True
+                
             except Exception as e:
                 logger.error(f"[{self.call_id}] Erro ao verificar energia do pre-buffer: {e}")
-                # Em caso de erro na verificação, agimos conservadoramente e ignoramos o evento
-                return
+                # Em caso de erro na verificação, vamos tentar continuar se temos um pre-buffer razoável
+                if len(self.pre_buffer) >= 15:  # Se temos pelo menos 300ms de áudio
+                    logger.info(f"[{self.call_id}] Continuando processamento mesmo com erro de verificação de energia, pois pre-buffer tem tamanho razoável ({len(self.pre_buffer)} frames)")
+                    self.collecting_audio = True
+                    self.speech_detected = True
+                else:
+                    return
         
         # Registrar evento no log APENAS se passou pelas verificações
         if self.call_logger:
@@ -347,7 +378,8 @@ class SpeechCallbacks:
                 
         # *** VERIFICAÇÃO FINAL DE TAMANHO MÍNIMO DO BUFFER ***
         # Exigimos um mínimo de frames para considerar como fala válida
-        MINIMUM_VALID_FRAMES = 15  # Aproximadamente 300ms de áudio
+        # REDUZIDO: Threshold de tamanho mínimo para ser mais sensível
+        MINIMUM_VALID_FRAMES = 10  # Reduzido de 15 para 10 frames (~200ms de áudio)
         
         if len(self.audio_buffer) < MINIMUM_VALID_FRAMES:
             logger.warning(f"[{self.call_id}] Buffer muito pequeno para processamento ({len(self.audio_buffer)} < {MINIMUM_VALID_FRAMES} frames) - descartando evento")
@@ -365,8 +397,8 @@ class SpeechCallbacks:
         logger.info(f"[{self.call_id}] Processando áudio após fim de fala: {buffer_size} frames (~{audio_duration_ms}ms), {audio_bytes} bytes")
         
         # Garantir tamanho mínimo de áudio para evitar ruído e falsos positivos
-        # 5 frames = ~100ms de áudio, mínimo razoável para uma expressão curta como "sim"
-        if buffer_size >= 5:
+        # REDUZIDO: tamanho mínimo de frames para processar (4 frames = ~80ms)
+        if buffer_size >= 4:  # Reduzido de 5 para 4
             # Processar via ciclo principal - método mais seguro e thread-safe
             if audio_data:
                 logger.info(f"[{self.call_id}] Preparando {len(audio_data)} bytes para processamento seguro")
@@ -450,7 +482,7 @@ class SpeechCallbacks:
             energy = sum(sample ** 2 for sample in samples) / len(samples)
             
             # Se a energia for muito baixa, considerar como silêncio ou ruído de fundo
-            ENERGY_THRESHOLD = 500  # valor ajustável dependendo do ambiente
+            ENERGY_THRESHOLD = 400  # valor ajustável dependendo do ambiente - REDUZIDO para maior sensibilidade
             
             if energy < ENERGY_THRESHOLD:
                 if not hasattr(self, 'low_energy_counter'):
@@ -472,13 +504,31 @@ class SpeechCallbacks:
                 if hasattr(self, 'low_energy_counter'):
                     self.low_energy_counter = 0
                 
-                # Essa pode ser uma boa oportunidade para ativar a coleta
-                # se ainda não estiver coletando mas a energia subiu significativamente
-                if not self.collecting_audio and energy > ENERGY_THRESHOLD * 2:  # 2x o threshold para ter certeza
-                    # Isso pode indicar um início de fala que o Azure Speech não detectou
-                    logger.info(f"[{self.call_id}] Alta energia detectada ({energy:.2f}) - possível fala não detectada pelo Azure")
-                    # Não vamos ativar a coleta aqui, deixamos o detector de fala fazer isso 
-                    # para evitar falsos positivos
+                # NOVA IMPLEMENTAÇÃO: Detectar início de fala baseado em energia
+                # Se não estamos coletando, mas o áudio tem energia suficiente, ativar a coleta
+                # Isto permite iniciar a coleta mesmo se o Azure Speech não detectar o início
+                if not self.collecting_audio and energy > ENERGY_THRESHOLD * 1.5:  # Reduzido de 2x para 1.5x para maior sensibilidade
+                    # Isso indica um início de fala que o Azure Speech pode não ter detectado
+                    logger.info(f"[{self.call_id}] ATIVANDO COLETA com alta energia detectada ({energy:.2f}) - início de fala detectado por energia")
+                    
+                    # Simular evento de início de fala
+                    self.collecting_audio = True
+                    self.speech_detected = True
+                    
+                    # Registrar timestamp de último reset para ser consistente com o resto do código
+                    self.last_system_reset_time = time.time()
+                    
+                    # Registrar no logger específico da chamada, se disponível
+                    if self.call_logger:
+                        self.call_logger.log_speech_detected(is_visitor=self.is_visitor)
+                    
+                    # Usar pre-buffer para capturar o início completo da fala
+                    if hasattr(self, 'pre_buffer') and self.pre_buffer:
+                        pre_buffer_size = len(self.pre_buffer)
+                        logger.info(f"[{self.call_id}] Adicionando {pre_buffer_size} frames (~{pre_buffer_size*20}ms) do pre-buffer ao início da fala")
+                        # Inicializar buffer principal com pre-buffer
+                        self.audio_buffer = self.pre_buffer.copy()
+                        self.pre_buffer = []  # Limpar o pre-buffer após usar
         
         except Exception as e:
             logger.error(f"[{self.call_id}] Erro no cálculo de energia do áudio: {e}")
@@ -564,7 +614,53 @@ class SpeechCallbacks:
             if len(self.pre_buffer) > pre_buffer_limit:
                 self.pre_buffer.pop(0)  # Remove o frame mais antigo
                 
-            # Verificação periódica para detecção proativa de fala
+            # NOVO: Verificação de detecção proativa baseada em energia do áudio
+            # A cada 10 frames (~200ms), verificamos se há indícios de fala no pre-buffer
+            if len(self.pre_buffer) % 10 == 0 and len(self.pre_buffer) >= 10:
+                # Analisar os últimos 10 frames para verificar energia média
+                try:
+                    import struct
+                    
+                    # Analisar apenas os últimos 10 frames para economia de processamento
+                    frames_to_analyze = self.pre_buffer[-10:]
+                    total_energy = 0
+                    
+                    for frame in frames_to_analyze:
+                        samples = struct.unpack('<' + 'h' * (len(frame) // 2), frame)
+                        frame_energy = sum(sample ** 2 for sample in samples) / len(samples)
+                        total_energy += frame_energy
+                    
+                    avg_energy = total_energy / len(frames_to_analyze)
+                    PROACTIVE_ENERGY_THRESHOLD = 600  # Valor mais alto para confirmação proativa
+                    
+                    # Se a energia média é alta o suficiente, temos fala potencial
+                    if avg_energy > PROACTIVE_ENERGY_THRESHOLD:
+                        logger.info(f"[{self.call_id}] DETECÇÃO PROATIVA: Energia alta no pre-buffer ({avg_energy:.2f} > {PROACTIVE_ENERGY_THRESHOLD})")
+                        
+                        # Ativar coleta se tivermos energia suficiente
+                        if not self.collecting_audio:
+                            logger.info(f"[{self.call_id}] ATIVANDO COLETA de forma proativa baseada em energia do pre-buffer")
+                            self.collecting_audio = True
+                            self.speech_detected = True
+                            
+                            # Registrar timestamp de último reset para ser consistente com o resto do código
+                            self.last_system_reset_time = time.time()
+                            
+                            # Registrar no logger específico da chamada, se disponível
+                            if self.call_logger:
+                                self.call_logger.log_speech_detected(is_visitor=self.is_visitor)
+                            
+                            # Usar pre-buffer para inicializar o buffer principal
+                            if self.pre_buffer:
+                                self.audio_buffer = self.pre_buffer.copy()
+                                self.pre_buffer = []  # Limpar o pre-buffer após usar
+                                
+                                # Registrar a quantidade de frames salvos
+                                logger.info(f"[{self.call_id}] Buffer inicializado com {len(self.audio_buffer)} frames proativamente")
+                except Exception as e:
+                    logger.error(f"[{self.call_id}] Erro na verificação proativa de energia: {e}")
+            
+            # Log padrão para monitoramento do pre-buffer
             if len(self.pre_buffer) % 50 == 0:  # A cada ~1s verificamos atividade
                 logger.debug(f"[{self.call_id}] Pre-buffer mantendo {len(self.pre_buffer)} frames")
                 
