@@ -9,16 +9,16 @@ logger = logging.getLogger(__name__)
 DEBUG_DIR = "audio/debug"
 os.makedirs(DEBUG_DIR, exist_ok=True)
 
-# Definir explicitamente as configurações de áudio
 SAMPLE_RATE = 8000
 CHANNELS = 1
 BITS_PER_SAMPLE = 16
 
 class SpeechCallbacks:
-    def __init__(self, call_id):
+    def __init__(self, call_id, session_manager):
         self.call_id = call_id
         self.audio_buffer = []
         self.recognition_count = 0
+        self.session_manager = session_manager  # sessão_manager injetado
 
     def log_event(self, event_type, data=None):
         logger.info(f"[{self.call_id}] {event_type}: {data}")
@@ -28,7 +28,9 @@ class SpeechCallbacks:
             text = evt.result.text
             self.log_event("RECOGNIZED", text)
 
-            # Salva áudio no momento do reconhecimento
+            # Enviar texto reconhecido ao session_manager
+            self.session_manager.process_visitor_text(self.call_id, text)
+
             self.recognition_count += 1
             filename = os.path.join(
                 DEBUG_DIR,
@@ -40,7 +42,6 @@ class SpeechCallbacks:
         elif evt.result.reason == speechsdk.ResultReason.NoMatch:
             self.log_event("NO_MATCH", evt.result.no_match_details)
 
-            # Salva áudio mesmo quando não houver match
             filename = os.path.join(
                 DEBUG_DIR,
                 f"{self.call_id}_nomatch_{int(time.time())}.wav"
@@ -55,11 +56,9 @@ class SpeechCallbacks:
         recognizer.session_stopped.connect(lambda evt: self.log_event("SESSION_STOPPED", evt.session_id))
 
     def add_audio_chunk(self, chunk):
-        """Adiciona chunk ao buffer interno para debug."""
         self.audio_buffer.append(chunk)
 
     def save_audio_to_wav(self, filename):
-        """Salva o áudio coletado no buffer em formato WAV para análise."""
         if not self.audio_buffer:
             self.log_event("SAVE_AUDIO_SKIPPED", "Buffer vazio.")
             return
@@ -68,7 +67,7 @@ class SpeechCallbacks:
             audio_data = b''.join(self.audio_buffer)
             with wave.open(filename, 'wb') as wf:
                 wf.setnchannels(CHANNELS)
-                wf.setsampwidth(BITS_PER_SAMPLE // 8)  # 16 bits = 2 bytes
+                wf.setsampwidth(BITS_PER_SAMPLE // 8)
                 wf.setframerate(SAMPLE_RATE)
                 wf.writeframes(audio_data)
 

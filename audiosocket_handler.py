@@ -4,6 +4,7 @@ import azure.cognitiveservices.speech as speechsdk
 from azure_speech_callbacks import SpeechCallbacks
 import os
 import wave
+from session_manager import SessionManager  # <- importado aqui para usar após transcrição
 
 SAMPLE_RATE = 8000
 CHANNELS = 1
@@ -12,7 +13,10 @@ os.makedirs(DEBUG_DIR, exist_ok=True)
 
 logger = logging.getLogger(__name__)
 
-# Parser TLV AudioSocket
+# Podemos instanciar um SessionManager aqui como singleton/global.
+# Se preferir criar em outro lugar, adapte.
+session_manager = SessionManager()
+
 async def read_tlv_packet(reader):
     header = await reader.readexactly(3)
     if len(header) < 3:
@@ -43,7 +47,8 @@ async def iniciar_servidor_audiosocket_visitante(reader, writer):
     audio_config = speechsdk.audio.AudioConfig(stream=push_stream)
 
     recognizer = speechsdk.SpeechRecognizer(speech_config, audio_config)
-    callbacks = SpeechCallbacks(call_id="visitante_test")
+    session_id = "visitante_test"  # Aqui pode vir de uma lógica dinâmica depois
+    callbacks = SpeechCallbacks(call_id=session_id, session_manager=session_manager)
     callbacks.register_callbacks(recognizer)
 
     recognizer.start_continuous_recognition_async()
@@ -77,7 +82,6 @@ async def iniciar_servidor_audiosocket_visitante(reader, writer):
         push_stream.close()
         recognizer.stop_continuous_recognition_async()
 
-        # Salvar áudio para diagnóstico
         audio_data = b''.join(audio_buffer)
         filename = os.path.join(DEBUG_DIR, "audio_recebido_socket.wav")
         with wave.open(filename, 'wb') as wf:
