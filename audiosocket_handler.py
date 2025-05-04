@@ -443,12 +443,15 @@ async def receber_audio_morador(reader: asyncio.StreamReader, call_id: str):
 
     # Callbacks
     async def process_recognized_text(text, audio_data):
-        if not audio_data:
+        if not audio_data or len(audio_data) < 2000:
+            logger.warning(f"[{call_id}] Áudio do morador muito curto ({len(audio_data)} bytes), ignorando")
             return
 
         session = session_manager.get_session(call_id)
         session.resident_state = "WAITING"
         call_logger.log_transcription_start(len(audio_data), is_visitor=False)
+
+        logger.info(f"[{call_id}] Texto reconhecido do morador: '{text}'")
 
         if text and text.strip():
             call_logger.log_transcription_complete(text, 0, is_visitor=False)
@@ -484,7 +487,10 @@ async def receber_audio_morador(reader: asyncio.StreamReader, call_id: str):
             kind = header[0]
             length = int.from_bytes(header[1:3], "big")
             audio_chunk = await reader.readexactly(length)
-
+            session = session_manager.get_session(call_id)
+            if session and session.resident_state != "USER_TURN":
+                logger.debug(f"[{call_id}] Ignorando áudio: estado atual é {session.resident_state}")
+                continue  # Não processar o áudio
             push_stream.write(audio_chunk)
     except asyncio.IncompleteReadError:
         await encerrar_conexao(call_id, "morador")
