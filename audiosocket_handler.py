@@ -441,7 +441,7 @@ async def receber_audio_morador(reader: asyncio.StreamReader, call_id: str):
     audio_config = speechsdk.audio.AudioConfig(stream=push_stream)
     recognizer = speechsdk.SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
 
-    # Callbacks
+    # Callback de processamento de texto reconhecido
     async def process_recognized_text(text, audio_data):
         if not audio_data or len(audio_data) < 2000:
             logger.warning(f"[{call_id}] Áudio do morador muito curto ({len(audio_data)} bytes), ignorando")
@@ -465,33 +465,36 @@ async def receber_audio_morador(reader: asyncio.StreamReader, call_id: str):
     speech_callbacks = SpeechCallbacks(call_id, session_manager=session_manager, is_visitor=False, call_logger=call_logger)
     speech_callbacks.set_process_callback(process_recognized_text)
     speech_callbacks.register_callbacks(recognizer)
-    
-    # Armazenar referência ao objeto callbacks na sessão para controle de estado
+
+    # Associar callbacks à sessão
     session = session_manager.get_session(call_id)
     if session:
         session.speech_callbacks = speech_callbacks
-        
-        # Morador já tem primeira mensagem reproduzida pelo sistema antes
-        # Definir estado inicial como USER_TURN para permitir que o morador fale
         session.resident_state = "USER_TURN"
         logger.info(f"[{call_id}] Estado do morador definido como USER_TURN para iniciar escuta")
 
-    # Para o morador, já iniciamos o reconhecimento de voz 
-    # A mensagem inicial do morador é enviada separadamente
     recognizer.start_continuous_recognition_async()
     logger.info(f"[{call_id}] Reconhecimento de voz do morador iniciado")
 
     try:
         while True:
-            header = await reader.readexactly(3)
-            kind = header[0]
-            length = int.from_bytes(header[1:3], "big")
-            audio_chunk = await reader.readexactly(length)
-            session = session_manager.get_session(call_id)
-            if session and session.resident_state != "USER_TURN":
-                logger.debug(f"[{call_id}] Ignorando áudio: estado atual é {session.resident_state}")
-                continue  # Não processar o áudio
-            push_stream.write(audio_chunk)
+            packet_type, payload = await read_tlv_packet(reader)
+
+            if packet_type == 0x10:  # Pacote de áudio
+                session = session_manager.get_session(call_id)
+                if session and session.resident_state != "USER_TURN":
+                    logger.debug(f"[{call_id}] Ignorando áudio: estado atual é {session.resident_state}")
+                    continue
+
+                push_stream.write(payload)
+
+            elif packet_type == 0x01:
+                logger.info(f"[{call_id}] UUID recebido do morador: {payload.hex()}")
+
+            elif packet_type == 0x00:
+                logger.info(f"[{call_id}] Pacote de término recebido do morador.")
+                break
+
     except asyncio.IncompleteReadError:
         await encerrar_conexao(call_id, "morador")
         logger.info(f"[{call_id}] Morador desconectado.")
