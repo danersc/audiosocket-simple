@@ -205,14 +205,14 @@ async def send_goodbye_and_terminate(writer, session, call_id, role, call_logger
 
         writer.close()
         await writer.wait_closed()
+        await encerrar_conexao(call_id, role)
         logger.info(f"[{call_id}] Conexão com {role} encerrada com sucesso")
 
     except Exception as e:
         logger.error(f"[{call_id}] Erro ao enviar despedida para {role}: {e}")
         # Ainda assim, tentar fechar a conexão em caso de erro
         try:
-            writer.close()
-            await writer.wait_closed()
+            await encerrar_conexao(call_id, role)
         except:
             pass
 
@@ -329,6 +329,7 @@ async def receber_audio_visitante(reader, call_id, push_stream, callbacks, audio
                 logger.info("Pacote de término recebido.")
                 break
     except asyncio.IncompleteReadError:
+        await encerrar_conexao(call_id, "morador")
         logger.warning("Conexão fechada abruptamente.")
     except Exception as e:
         logger.error(f"Erro ao receber dados: {e}")
@@ -486,6 +487,7 @@ async def receber_audio_morador(reader: asyncio.StreamReader, call_id: str):
 
             push_stream.write(audio_chunk)
     except asyncio.IncompleteReadError:
+        await encerrar_conexao(call_id, "morador")
         logger.info(f"[{call_id}] Morador desconectado.")
     finally:
         recognizer.stop_continuous_recognition_async()
@@ -557,3 +559,53 @@ async def enviar_audio(writer, dados_audio, call_id=None, origem=None):
         writer.write(header + chunk)
         await writer.drain()
         await asyncio.sleep(TRANSMISSION_DELAY_MS)  # Usar o valor configurado
+
+async def encerrar_conexao(call_id: str, role: str):
+    """
+    Encerra a conexão do visitante ou morador de forma segura e controlada.
+    Envia o byte de HANGUP (0x00) e fecha a conexão.
+    """
+    try:
+        session = session_manager.get_session(call_id)
+        if not session:
+            logger.warning(f"[{call_id}] Sessão não encontrada para encerrar conexão do {role}")
+            return
+
+        conn = resource_manager.get_active_connection(call_id, role)
+        if not conn or 'writer' not in conn:
+            logger.warning(f"[{call_id}] Writer do {role} não encontrado ou já encerrado")
+        else:
+            writer = conn['writer']
+            try:
+                logger.info(f"[{call_id}] Enviando byte de HANGUP (0x00) para {role}")
+                writer.write(struct.pack('>B H', 0x00, 0))
+                await writer.drain()
+            except ConnectionResetError:
+                logger.info(f"[{call_id}] Conexão já estava encerrada ao tentar enviar HANGUP para {role}")
+            except Exception as e:
+                logger.warning(f"[{call_id}] Erro ao enviar HANGUP para {role}: {e}")
+
+            try:
+                writer.close()
+                await asyncio.wait_for(writer.wait_closed(), timeout=2.0)
+                logger.info(f"[{call_id}] Conexão do {role} encerrada com sucesso")
+            except Exception as e:
+                logger.warning(f"[{call_id}] Erro ao fechar writer do {role}: {e}")
+
+        # Marcar evento de encerramento
+        if role == "visitante":
+            session.terminate_visitor_event.set()
+        elif role == "morador":
+            session.terminate_resident_event.set()
+
+        # Se ambos encerraram, removemos a sessão por completo
+        if session.terminate_visitor_event.is_set() and session.terminate_resident_event.is_set():
+            logger.info(f"[{call_id}] Ambos encerraram, finalizando sessão completa")
+            session_manager.end_session(call_id)
+            session_manager._complete_session_termination(call_id)
+
+        # Remover do resource manager
+        resource_manager.unregister_connection(call_id, role)
+
+    except Exception as e:
+        logger.error(f"[{call_id}] Erro ao encerrar conexão de {role}: {e}", exc_info=True)

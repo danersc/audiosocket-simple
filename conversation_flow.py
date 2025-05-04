@@ -777,12 +777,11 @@ class ConversationFlow:
                 # Após enviar os KIND_HANGUP, aguardar um pouco e finalizar a sessão completamente
                 await asyncio.sleep(1.0)
                 session_manager.end_session(session_id)
-                
-                # Uma limpeza final após mais um pequeno delay
-                await asyncio.sleep(1.0)
-                if session_manager.get_session(session_id):
-                    logger.info(f"[Flow] Forçando limpeza final da sessão {session_id}")
-                    session_manager._complete_session_termination(session_id)
+
+                from audiosocket_handler import encerrar_conexao
+                # Encerrar conexões de forma segura
+                await encerrar_conexao(session_id, "visitor")
+                await encerrar_conexao(session_id, "morador")
                     
             except Exception as e:
                 logger.error(f"[Flow] Erro ao enviar KIND_HANGUP ativo: {e}", exc_info=True)

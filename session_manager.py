@@ -108,16 +108,27 @@ class SessionManager:
 
     def process_resident_text(self, session_id: str, text: str):
         """
-        Agora chamamos o Flow para lidar com a msg do morador.
+        Processa mensagens do morador e garante que o fluxo da conversa seja acionado.
         """
         session = self.get_session(session_id)
         if not session:
+            logger.warning(
+                f"[SessionManager] Sessão {session_id} não encontrada ao processar texto do morador. Criando nova.")
             session = self.create_session(session_id)
+
+        if not hasattr(session, 'flow') or session.flow is None:
+            logger.warning(
+                f"[SessionManager] Fluxo de conversa ausente na sessão {session_id}. Criando ConversationFlow.")
+            from conversation_flow import ConversationFlow
+            session.flow = ConversationFlow(extension_manager=self.extension_manager)
 
         logger.info(f"[Session {session_id}] Resident disse: {text}")
         session.history.append(f"[Resident] {text}")
 
-        session.flow.on_resident_message(session_id, text, self)
+        try:
+            session.flow.on_resident_message(session_id, text, self)
+        except Exception as e:
+            logger.error(f"[SessionManager] Erro ao processar mensagem do morador: {e}", exc_info=True)
 
     def end_session(self, session_id: str):
         """
