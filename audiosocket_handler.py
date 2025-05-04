@@ -487,6 +487,7 @@ async def receber_audio_morador(reader: asyncio.StreamReader, call_id: str):
                     continue
 
                 push_stream.write(payload)
+                speech_callbacks.add_audio_chunk(payload)  # <-- ESSA LINHA É ESSENCIAL
 
             elif packet_type == 0x01:
                 logger.info(f"[{call_id}] UUID recebido do morador: {payload.hex()}")
