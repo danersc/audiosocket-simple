@@ -100,6 +100,7 @@ async def send_goodbye_and_terminate(writer, session, call_id, role, call_logger
     """
     Envia uma mensagem de despedida final e encerra a conexão.
     """
+    global config
     try:
         # Obter mensagem de despedida baseada na configuração
         # Decisão baseada no papel e no estado da conversa
@@ -230,14 +231,12 @@ async def iniciar_servidor_audiosocket_visitante(reader, writer):
     task1 = asyncio.create_task(receber_audio_visitante(reader, call_id, push_stream, callbacks, audio_buffer))
     task2 = asyncio.create_task(enviar_mensagens_visitante(writer, call_id))
 
-    await asyncio.wait([task1, task2], return_when=asyncio.FIRST_COMPLETED)
-
     session = session_manager.get_session(call_id)
 
     while True:
-        if await check_terminate_flag(session, call_id, "visitante"):
+        if await check_terminate_flag(session, call_id, "visitante", call_logger=CallLoggerManager.get_logger(call_id)):
             logger.info(f"[{call_id}] Encerrando sessão do visitante.")
-            await send_goodbye_and_terminate(writer, call_id, "visitante")
+            await send_goodbye_and_terminate(writer, session, call_id, "visitante", call_logger=CallLoggerManager.get_logger(call_id))
             break
         done, pending = await asyncio.wait([task1, task2], timeout=TERMINATE_CHECK_INTERVAL,
                                            return_when=asyncio.FIRST_COMPLETED)
@@ -245,6 +244,10 @@ async def iniciar_servidor_audiosocket_visitante(reader, writer):
         if done:
             logger.info(f"[{call_id}] Uma das tarefas do visitante foi encerrada.")
             break
+    
+    # Cancelar quaisquer tarefas pendentes
+    for task in [t for t in [task1, task2] if not t.done()]:
+        task.cancel()
 
     push_stream.close()
     recognizer.stop_continuous_recognition_async()
@@ -279,11 +282,24 @@ async def receber_audio_visitante(reader, call_id, push_stream, callbacks, audio
 
 async def enviar_mensagens_visitante(writer, call_id):
     session = session_manager.get_session(call_id)
+    call_logger = CallLoggerManager.get_logger(call_id)
+    
     while True:
+        if session and session.terminate_visitor_event.is_set():
+            break
+            
         msg = session_manager.get_message_for_visitor(call_id)
         if msg:
+            if call_logger:
+                call_logger.log_synthesis_start(msg, is_visitor=True)
+                
             audio_resposta = await sintetizar_fala_async(msg)
-            await enviar_audio(writer, audio_resposta)
+            
+            if audio_resposta:
+                await enviar_audio(writer, audio_resposta, call_id=call_id, origem="Visitante")
+                if session:
+                    session.visitor_state = "USER_TURN"
+        
         await asyncio.sleep(0.2)
 
 async def iniciar_servidor_audiosocket_morador(reader, writer):
@@ -306,9 +322,9 @@ async def iniciar_servidor_audiosocket_morador(reader, writer):
     session = session_manager.get_session(call_id)
 
     while True:
-        if await check_terminate_flag(session, call_id, "morador"):
+        if await check_terminate_flag(session, call_id, "morador", call_logger=CallLoggerManager.get_logger(call_id)):
             logger.info(f"[{call_id}] Encerrando sessão do morador.")
-            await send_goodbye_and_terminate(writer, call_id, "morador")
+            await send_goodbye_and_terminate(writer, session, call_id, "morador", call_logger=CallLoggerManager.get_logger(call_id))
             break
 
         done, pending = await asyncio.wait([task1, task2], timeout=TERMINATE_CHECK_INTERVAL,
@@ -318,8 +334,9 @@ async def iniciar_servidor_audiosocket_morador(reader, writer):
             logger.info(f"[{call_id}] Uma das tarefas do morador foi encerrada.")
             break
 
-
-    await asyncio.wait([task1, task2], return_when=asyncio.FIRST_COMPLETED)
+    # Cancelar quaisquer tarefas pendentes
+    for task in [t for t in [task1, task2] if not t.done()]:
+        task.cancel()
 
 async def receber_audio_morador(reader: asyncio.StreamReader, call_id: str):
     call_logger = CallLoggerManager.get_logger(call_id)
@@ -399,11 +416,25 @@ async def enviar_mensagens_morador(writer: asyncio.StreamWriter, call_id: str):
                 await enviar_audio(writer, audio_resposta, call_id=call_id, origem="Morador")
                 session.resident_state = "USER_TURN"
 
-async def enviar_audio(writer, dados_audio):
+async def enviar_audio(writer, dados_audio, call_id=None, origem=None):
+    """
+    Envia dados de áudio para o cliente AudioSocket.
+    
+    Args:
+        writer: StreamWriter para enviar os dados
+        dados_audio: Bytes contendo os dados de áudio
+        call_id: ID opcional da chamada para logs
+        origem: String opcional indicando a origem (Visitante/Morador) para logs
+    """
     chunk_size = 320
+    log_prefix = f"[{call_id}]" if call_id else ""
+    
+    if origem and call_id:
+        logger.debug(f"{log_prefix} Enviando áudio de {origem} ({len(dados_audio)} bytes)")
+        
     for i in range(0, len(dados_audio), chunk_size):
         chunk = dados_audio[i:i + chunk_size]
         header = struct.pack(">B H", 0x10, len(chunk))
         writer.write(header + chunk)
         await writer.drain()
-        await asyncio.sleep(0.02)
+        await asyncio.sleep(TRANSMISSION_DELAY_MS)  # Usar o valor configurado
