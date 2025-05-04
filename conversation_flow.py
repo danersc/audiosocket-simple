@@ -146,9 +146,31 @@ class ConversationFlow:
 
                         # Avança para CHAMANDO_MORADOR e inicia o processo de chamada
                         self.state = FlowState.CHAMANDO_MORADOR
-                        # Iniciar o processo de chamada como uma task assíncrona
-                        loop = asyncio.get_event_loop()
-                        self.calling_task = loop.create_task(self.iniciar_processo_chamada(session_id, session_manager))
+                        
+                        # Usar uma estratégia diferente: executar a coroutine em uma thread separada
+                        import threading
+                        
+                        def run_async_call():
+                            """Função auxiliar para executar a coroutine em uma thread separada"""
+                            try:
+                                logger.info(f"[Flow] Iniciando thread para executar iniciar_processo_chamada")
+                                # asyncio.run() vai criar um novo event loop e executar a coroutine nele
+                                asyncio.run(self.iniciar_processo_chamada(session_id, session_manager))
+                                logger.info(f"[Flow] Thread de chamada concluída com sucesso")
+                            except Exception as e:
+                                logger.error(f"[Flow] Erro em thread de chamada: {e}", exc_info=True)
+                        
+                        # Iniciar a thread
+                        logger.info(f"[Flow] Criando thread para iniciar_processo_chamada com session_id={session_id}")
+                        call_thread = threading.Thread(target=run_async_call)
+                        call_thread.daemon = True  # Thread em segundo plano
+                        call_thread.start()
+                        
+                        # Armazenar referência
+                        self.calling_task = call_thread
+                        
+                        # Log para confirmar
+                        logger.info(f"[Flow] Thread para iniciar_processo_chamada iniciada")
                     else:
                         # Mensagem com mais detalhes sobre o motivo da falha
                         if "best_match" in fuzzy_res and fuzzy_res.get("best_score", 0) > 50:
@@ -428,6 +450,18 @@ class ConversationFlow:
         # Log detalhado para diagnóstico
         logger.info(f"[Flow] Iniciando processo de chamada para morador: voip={self.voip_number_morador}, session_id={session_id}")
         logger.info(f"[Flow] Dados do intent: {self.intent_data}")
+        
+        # Garantir que temos um loop de eventos válido nesta thread
+        try:
+            # Para verificação apenas
+            current_loop = asyncio.get_running_loop()
+            logger.info(f"[Flow] Usando loop de eventos existente: {current_loop}")
+        except RuntimeError:
+            # Isso não deveria acontecer se a coroutine foi iniciada corretamente,
+            # mas adicionamos um tratamento especial por precaução
+            logger.warning(f"[Flow] Não há loop de eventos na thread atual para iniciar_processo_chamada")
+            # Vamos criar um novo event loop, mas isso geralmente não é necessário e pode indicar um erro de design
+            asyncio.set_event_loop(asyncio.new_event_loop())
         
         if not self.voip_number_morador:
             logger.warning("[Flow] voip_number_morador está vazio, não posso discar.")
@@ -760,8 +794,24 @@ class ConversationFlow:
                 # Em caso de erro, tentar finalizar a sessão do modo tradicional
                 session_manager.end_session(session_id)
         
-        # Criar e iniciar a tarefa assíncrona
-        loop = asyncio.get_event_loop()
-        task = loop.create_task(send_hangup_after_delay())
+        # Usar a mesma estratégia com thread separada
+        import threading
+        
+        def run_async_hangup():
+            """Função auxiliar para executar o hangup em uma thread separada"""
+            try:
+                logger.info(f"[Flow] Iniciando thread para executar hangup para session_id={session_id}")
+                # asyncio.run() vai criar um novo event loop e executar a coroutine nele
+                asyncio.run(send_hangup_after_delay())
+                logger.info(f"[Flow] Thread de hangup concluída com sucesso")
+            except Exception as e:
+                logger.error(f"[Flow] Erro em thread de hangup: {e}", exc_info=True)
+        
+        # Iniciar a thread
+        logger.info(f"[Flow] Criando thread para hangup com session_id={session_id}")
+        hangup_thread = threading.Thread(target=run_async_hangup)
+        hangup_thread.daemon = True  # Thread em segundo plano
+        hangup_thread.start()
         
         # Não aguardamos a conclusão da tarefa para não bloquear o fluxo
+        logger.info(f"[Flow] Thread para hangup iniciada")
