@@ -5,6 +5,7 @@ import json
 import logging
 import struct
 from enum import Enum
+import wave
 
 import azure.cognitiveservices.speech as speechsdk
 from dotenv import load_dotenv
@@ -425,6 +426,8 @@ async def iniciar_servidor_audiosocket_morador(reader, writer):
     for task in [t for t in [task1, task2] if not t.done()]:
         task.cancel()
 
+import wave  # certifique-se que wave está importado no topo
+
 async def receber_audio_morador(reader: asyncio.StreamReader, call_id: str):
     call_logger = CallLoggerManager.get_logger(call_id)
 
@@ -441,7 +444,9 @@ async def receber_audio_morador(reader: asyncio.StreamReader, call_id: str):
     audio_config = speechsdk.audio.AudioConfig(stream=push_stream)
     recognizer = speechsdk.SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
 
-    # Callback de processamento de texto reconhecido
+    # Buffer para salvar todo o áudio recebido do morador
+    raw_audio_buffer = []
+
     async def process_recognized_text(text, audio_data):
         if not audio_data or len(audio_data) < 2000:
             logger.warning(f"[{call_id}] Áudio do morador muito curto ({len(audio_data)} bytes), ignorando")
@@ -466,7 +471,6 @@ async def receber_audio_morador(reader: asyncio.StreamReader, call_id: str):
     speech_callbacks.set_process_callback(process_recognized_text)
     speech_callbacks.register_callbacks(recognizer)
 
-    # Associar callbacks à sessão
     session = session_manager.get_session(call_id)
     if session:
         session.speech_callbacks = speech_callbacks
@@ -487,7 +491,10 @@ async def receber_audio_morador(reader: asyncio.StreamReader, call_id: str):
                     continue
 
                 push_stream.write(payload)
-                speech_callbacks.add_audio_chunk(payload)  # <-- ESSA LINHA É ESSENCIAL
+                speech_callbacks.add_audio_chunk(payload)
+
+                # Salvar no buffer completo para depuração
+                raw_audio_buffer.append(payload)
 
             elif packet_type == 0x01:
                 logger.info(f"[{call_id}] UUID recebido do morador: {payload.hex()}")
@@ -501,6 +508,18 @@ async def receber_audio_morador(reader: asyncio.StreamReader, call_id: str):
         logger.info(f"[{call_id}] Morador desconectado.")
     finally:
         recognizer.stop_continuous_recognition_async()
+
+        # Salvar o áudio bruto recebido em WAV
+        filename = f"audio/debug/morador_raw_{call_id}_{int(time.time())}.wav"
+        try:
+            with wave.open(filename, 'wb') as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(8000)
+                wf.writeframes(b''.join(raw_audio_buffer))
+            logger.info(f"[{call_id}] 🔊 Áudio bruto do morador salvo em: {filename}")
+        except Exception as e:
+            logger.error(f"[{call_id}] ❌ Erro ao salvar áudio do morador: {e}")
 
 async def enviar_mensagens_morador(writer: asyncio.StreamWriter, call_id: str):
     call_logger = CallLoggerManager.get_logger(call_id)
