@@ -41,9 +41,13 @@ def validar_intent_com_fuzzy(intent: Dict) -> Dict:
         }
         
         # Log para debug
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Validando: Apt={apt}, Morador={resident_informado}")
         print(f"Validando: Apt={apt}, Morador={resident_informado}")
 
         if not apt or not resident_informado:
+            logger.warning(f"Dados incompletos: apt='{apt}', resident='{resident_informado}'")
             return {
                 "status": "inválido",
                 "reason": "Faltando número do apartamento ou nome do morador"
@@ -118,11 +122,35 @@ def validar_intent_com_fuzzy(intent: Dict) -> Dict:
 
         # Umbral mais baixo para melhorar a taxa de aceitação
         if best_score >= 75:
-            print(f"Match encontrado: {best_match} no apt {best_apt['apartment_number']} (score={best_score})")
+            # Processar o voip_number adequadamente
+            voip_number = best_apt.get("voip_number", "")
+            
+            # Validar o formato do voip_number
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"Match encontrado: {best_match} no apt {best_apt['apartment_number']} (score={best_score})")
+            logger.info(f"voip_number original: {voip_number}")
+            
+            # Verificar se o número está no formato SIP URI e processar adequadamente
+            if isinstance(voip_number, str) and voip_number.startswith("sip:"):
+                # Extrair apenas a parte numérica se estiver no formato sip:XXX@dominio
+                import re
+                sip_match = re.match(r'sip:(\d+)@', voip_number)
+                if sip_match:
+                    voip_number = sip_match.group(1)
+                    logger.info(f"Extraído número do SIP URI: {voip_number}")
+            
+            # Garantir que o número seja uma string válida
+            if not isinstance(voip_number, str):
+                voip_number = str(voip_number)
+            
+            logger.info(f"voip_number processado: {voip_number}")
+            print(f"Match encontrado: {best_match} no apt {best_apt['apartment_number']} (score={best_score}), voip={voip_number}")
+            
             return {
                 "status": "válido",
                 "match_name": best_match,
-                "voip_number": best_apt["voip_number"],
+                "voip_number": voip_number,
                 "match_score": best_score,
                 "apartment_number": best_apt["apartment_number"]
             }

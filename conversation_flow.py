@@ -11,6 +11,8 @@ from ai.tools import validar_intent_com_fuzzy
 import pika
 import json
 import asyncio
+import socket
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +115,20 @@ class ConversationFlow:
                     if fuzzy_res["status"] == "válido":
                         self.is_fuzzy_valid = True
                         self.voip_number_morador = fuzzy_res.get("voip_number")
+                        
+                        # Processar o voip_number para garantir um formato correto
+                        if isinstance(self.voip_number_morador, str) and self.voip_number_morador.startswith("sip:"):
+                            # Extrair apenas a parte numérica se estiver no formato sip:XXX@dominio
+                            sip_match = re.match(r'sip:(\d+)@', self.voip_number_morador)
+                            if sip_match:
+                                original_number = self.voip_number_morador
+                                self.voip_number_morador = sip_match.group(1)
+                                logger.info(f"[Flow] Convertido número SIP URI '{original_number}' para '{self.voip_number_morador}'")
+                        
+                        # Garantir que o voip_number é uma string
+                        if not isinstance(self.voip_number_morador, str):
+                            self.voip_number_morador = str(self.voip_number_morador)
+                            logger.info(f"[Flow] Convertido voip_number para string: {self.voip_number_morador}")
                         
                         # Atualizar o intent_data com o nome correto do apartamento/morador
                         if "apartment_number" in fuzzy_res:
@@ -492,6 +508,10 @@ class ConversationFlow:
         rabbit_vhost = 'voip'
         queue_name = 'api-to-voip1'
 
+        # Melhor logging para diagnóstico
+        logger.info(f"[Flow] AMQP Config: host={rabbit_host}, vhost={rabbit_vhost}, queue={queue_name}")
+        logger.info(f"[Flow] AMQP: Iniciando processo de clicktocall para morador={morador_voip_number}, guid={guid}")
+
         # Verificação de segurança - GUID não pode estar vazio
         if not guid or len(guid) < 8:
             logger.error(f"[Flow] GUID inválido para clicktocall: '{guid}'")
@@ -506,25 +526,37 @@ class ConversationFlow:
             # Se temos um extension_manager, tentamos obter o ramal de retorno correto
             ramal_retorno = morador_voip_number
             if self.extension_manager:
+                logger.info(f"[Flow] AMQP: Tentando obter ramal dinâmico com extension_manager para guid={guid}")
                 ext_info = self.extension_manager.get_extension_info(call_id=guid)
                 if ext_info:
                     ramal_retorno = ext_info.get('ramal_retorno', morador_voip_number)
-                    logger.info(f"[Flow] Usando ramal de retorno dinâmico: {ramal_retorno} para sessão {guid}")
+                    logger.info(f"[Flow] AMQP: Usando ramal de retorno dinâmico: {ramal_retorno} para sessão {guid}")
                 else:
-                    logger.warning(f"[Flow] Usando ramal de retorno padrão: {morador_voip_number}, pois não encontrei configuração dinâmica")
+                    logger.warning(f"[Flow] AMQP: Usando ramal de retorno padrão: {morador_voip_number}, pois não encontrei configuração dinâmica")
             else:
-                logger.warning(f"[Flow] Extension manager não disponível, usando ramal padrão: {morador_voip_number}")
+                logger.warning(f"[Flow] AMQP: Extension manager não disponível, usando ramal padrão: {morador_voip_number}")
 
+            # Configuração da conexão com parâmetros aprimorados
+            logger.info(f"[Flow] AMQP: Criando credenciais para conexão...")
             credentials = pika.PlainCredentials(rabbit_user, rabbit_password)
             parameters = pika.ConnectionParameters(
                 host=rabbit_host,
                 virtual_host=rabbit_vhost,
-                credentials=credentials
+                credentials=credentials,
+                connection_attempts=2,  # Tentar conectar 2 vezes
+                retry_delay=1,          # 1 segundo entre tentativas
+                socket_timeout=5        # 5 segundos de timeout
             )
 
+            logger.info(f"[Flow] AMQP: Tentando conexão com {rabbit_host}...")
             connection = pika.BlockingConnection(parameters)
+            logger.info(f"[Flow] AMQP: Conexão estabelecida com sucesso!")
+            
             channel = connection.channel()
+            logger.info(f"[Flow] AMQP: Canal criado, declarando fila {queue_name}...")
+            
             channel.queue_declare(queue=queue_name, durable=True)
+            logger.info(f"[Flow] AMQP: Fila declarada com sucesso!")
 
             # Timestamp atual para o evento
             current_timestamp = int(time.time())
@@ -547,18 +579,32 @@ class ConversationFlow:
                 }
             }
 
+            payload_json = json.dumps(payload)
+            logger.info(f"[Flow] AMQP: Enviando payload: {payload_json}")
+
             channel.basic_publish(
                 exchange='',
                 routing_key=queue_name,
-                body=json.dumps(payload)
+                body=payload_json
             )
             
-            logger.info(f"[Flow] Mensagem AMQP enviada: origin={ramal_retorno}, guid={guid}, timestamp={current_timestamp}")
+            logger.info(f"[Flow] AMQP: Mensagem enviada com sucesso: origin={ramal_retorno}, guid={guid}, timestamp={current_timestamp}")
             connection.close()
+            logger.info(f"[Flow] AMQP: Conexão fechada com sucesso!")
             return True
             
+        except pika.exceptions.AMQPConnectionError as e:
+            logger.error(f"[Flow] AMQP: Erro de conexão ao servidor RabbitMQ: {e}")
+            logger.error(f"[Flow] AMQP: Detalhes da conexão: host={rabbit_host}, vhost={rabbit_vhost}, user={rabbit_user}")
+            return False
+        except pika.exceptions.ChannelError as e:
+            logger.error(f"[Flow] AMQP: Erro no canal RabbitMQ (possivelmente a fila não existe): {e}")
+            return False
+        except json.JSONDecodeError as e:
+            logger.error(f"[Flow] AMQP: Erro ao serializar payload JSON: {e}")
+            return False
         except Exception as e:
-            logger.error(f"[Flow] Erro ao enviar AMQP clicktocall: {e}")
+            logger.error(f"[Flow] AMQP: Erro inesperado ao enviar clicktocall: {e}", exc_info=True)
             return False
 
     # ----------------------------------------------------

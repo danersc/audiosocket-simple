@@ -37,6 +37,29 @@ session_manager = SessionManager()
 # Variável global para armazenar o extension_manager
 extension_manager = None
 
+# ----------------------------------------------------------------------------
+# Sistema de Turnos e Detecção de Voz
+# ----------------------------------------------------------------------------
+#
+# Este sistema implementa um controle de turnos simples para evitar problemas
+# de retroalimentação de áudio. O fluxo básico é:
+#
+# 1. Quando a IA vai falar (enviar_mensagens_):
+#    - Define o estado como "IA_TURN"
+#    - Limpa qualquer buffer de áudio pendente (reset_audio_detection)
+#    - Sintetiza e envia o áudio
+#    - Aguarda um pequeno delay após o áudio (POST_AUDIO_DELAY_SECONDS)
+#    - Define o estado como "USER_TURN"
+#
+# 2. Quando o Azure Speech detecta voz (SpeechCallbacks):
+#    - Verifica se é o turno do usuário (USER_TURN)
+#    - Se for IA_TURN, ignora completamente o áudio
+#    - Somente processa o áudio durante USER_TURN
+#
+# Este sistema evita que o Azure Speech reconheça o áudio da própria IA como
+# fala do usuário, prevenindo loops de retroalimentação.
+# ----------------------------------------------------------------------------
+
 try:
     with open('config.json', 'r') as f:
         config = json.load(f)
@@ -203,7 +226,15 @@ async def iniciar_servidor_audiosocket_visitante(reader, writer):
 
     session_manager.create_session(call_id)
     resource_manager.register_connection(call_id, "visitor", reader, writer)
+    
+    # Inicializar a sessão para o visitante
+    session = session_manager.get_session(call_id)
+    if session:
+        # Definir estado inicial como IA_TURN para evitar captura de áudio durante boas-vindas
+        session.visitor_state = "IA_TURN"
+        logger.info(f"[{call_id}] [TURNO] Estado inicial definido como IA_TURN para evitar captura durante boas-vindas")
 
+    # Preparar configuração do Azure Speech, mas não iniciar ainda
     speech_config = speechsdk.SpeechConfig(
         subscription=os.getenv("AZURE_SPEECH_KEY"),
         region=os.getenv("AZURE_SPEECH_REGION")
@@ -216,18 +247,41 @@ async def iniciar_servidor_audiosocket_visitante(reader, writer):
 
     recognizer = speechsdk.SpeechRecognizer(speech_config, audio_config)
 
-    session_manager.enfileirar_visitor(
-        call_id,
-        "Olá, seja bem-vindo! Por favor, informe o que deseja: se entrega ou visita."
-    )
-
-    callbacks = SpeechCallbacks(call_id=call_id, session_manager=session_manager)
+    # Criar objeto SpeechCallbacks e configurar como visitante
+    callbacks = SpeechCallbacks(call_id=call_id, session_manager=session_manager, is_visitor=True)
     callbacks.register_callbacks(recognizer)
-
-    recognizer.start_continuous_recognition_async()
-
+    
+    # Armazenar referência ao objeto callbacks na sessão
+    if session:
+        session.speech_callbacks = callbacks
+    
+    # IMPORTANTE: Não iniciar o reconhecimento ainda
+    # Vamos primeiro enviar a mensagem de boas-vindas
+    
     audio_buffer = []
-
+    
+    # Enviar mensagem de boas-vindas diretamente (sem reconhecimento ativo)
+    welcome_message = "Olá, seja bem-vindo! Por favor, informe o que deseja: se entrega ou visita."
+    logger.info(f"[{call_id}] Enviando mensagem de boas-vindas antes de iniciar reconhecimento")
+    
+    welcome_audio = await sintetizar_fala_async(welcome_message)
+    if welcome_audio:
+        await enviar_audio(writer, welcome_audio, call_id=call_id, origem="Visitante-Boas-Vindas")
+        
+        # Aguardar um delay adicional após a mensagem de boas-vindas
+        delay_after_welcome = GOODBYE_DELAY_SECONDS  # Usar o mesmo delay da despedida
+        logger.info(f"[{call_id}] Aguardando {delay_after_welcome}s após boas-vindas para iniciar reconhecimento")
+        await asyncio.sleep(delay_after_welcome)
+    
+    # Agora sim, iniciar tarefas de reconhecimento e mudamos para USER_TURN
+    if session:
+        session.visitor_state = "USER_TURN"
+        logger.info(f"[{call_id}] Alterando estado para USER_TURN e iniciando reconhecimento")
+    
+    # Iniciar o reconhecimento só agora, após a mensagem de boas-vindas
+    recognizer.start_continuous_recognition_async()
+    
+    # Iniciar tarefas de processamento
     task1 = asyncio.create_task(receber_audio_visitante(reader, call_id, push_stream, callbacks, audio_buffer))
     task2 = asyncio.create_task(enviar_mensagens_visitante(writer, call_id))
 
@@ -283,6 +337,7 @@ async def receber_audio_visitante(reader, call_id, push_stream, callbacks, audio
 async def enviar_mensagens_visitante(writer, call_id):
     session = session_manager.get_session(call_id)
     call_logger = CallLoggerManager.get_logger(call_id)
+    speech_callbacks = getattr(session, 'speech_callbacks', None)
     
     while True:
         if session and session.terminate_visitor_event.is_set():
@@ -290,15 +345,39 @@ async def enviar_mensagens_visitante(writer, call_id):
             
         msg = session_manager.get_message_for_visitor(call_id)
         if msg:
+            # Definir o estado como IA_TURN antes de começar a falar
+            if session:
+                logger.info(f"[{call_id}] [TURNO] Alterando estado para IA_TURN antes de sintetizar fala (msg: {msg[:30]}...)")
+                session.visitor_state = "IA_TURN"
+                
+                # Resetar a detecção de áudio para evitar eco
+                if speech_callbacks:
+                    speech_callbacks.reset_audio_detection()
+                else:
+                    logger.warning(f"[{call_id}] [TURNO] Speech callbacks não encontrado para reset!")
+            else:
+                logger.warning(f"[{call_id}] [TURNO] Sessão não encontrada para definir estado!")
+            
             if call_logger:
                 call_logger.log_synthesis_start(msg, is_visitor=True)
                 
+            logger.info(f"[{call_id}] [TURNO] Sintetizando áudio durante IA_TURN")
             audio_resposta = await sintetizar_fala_async(msg)
             
             if audio_resposta:
+                logger.info(f"[{call_id}] [TURNO] Enviando áudio durante IA_TURN ({len(audio_resposta)} bytes)")
                 await enviar_audio(writer, audio_resposta, call_id=call_id, origem="Visitante")
+                
+                # Aguardar um pequeno delay após enviar o áudio para evitar capturar o próprio áudio
+                logger.info(f"[{call_id}] [TURNO] Aguardando {POST_AUDIO_DELAY_SECONDS}s após enviar áudio")
+                await asyncio.sleep(POST_AUDIO_DELAY_SECONDS)
+                
+                # Mudar para USER_TURN após terminar de falar
                 if session:
+                    logger.info(f"[{call_id}] [TURNO] Alterando estado para USER_TURN após enviar áudio")
                     session.visitor_state = "USER_TURN"
+                else:
+                    logger.warning(f"[{call_id}] [TURNO] Sessão não encontrada para definir estado USER_TURN!")
         
         await asyncio.sleep(0.2)
 
@@ -372,11 +451,24 @@ async def receber_audio_morador(reader: asyncio.StreamReader, call_id: str):
                 call_logger.log_transcription_complete(texto, 0, is_visitor=False)
                 session_manager.process_resident_text(call_id, texto)
 
-    speech_callbacks = SpeechCallbacks(call_id, is_visitor=False, call_logger=call_logger)
+    speech_callbacks = SpeechCallbacks(call_id, session_manager=session_manager, is_visitor=False, call_logger=call_logger)
     speech_callbacks.set_process_callback(process_recognized_text)
     speech_callbacks.register_callbacks(recognizer)
+    
+    # Armazenar referência ao objeto callbacks na sessão para controle de estado
+    session = session_manager.get_session(call_id)
+    if session:
+        session.speech_callbacks = speech_callbacks
+        
+        # Morador já tem primeira mensagem reproduzida pelo sistema antes
+        # Definir estado inicial como USER_TURN para permitir que o morador fale
+        session.resident_state = "USER_TURN"
+        logger.info(f"[{call_id}] Estado do morador definido como USER_TURN para iniciar escuta")
 
+    # Para o morador, já iniciamos o reconhecimento de voz 
+    # A mensagem inicial do morador é enviada separadamente
     recognizer.start_continuous_recognition_async()
+    logger.info(f"[{call_id}] Reconhecimento de voz do morador iniciado")
 
     try:
         while True:
@@ -398,6 +490,8 @@ async def enviar_mensagens_morador(writer: asyncio.StreamWriter, call_id: str):
     if not session:
         logger.error(f"[{call_id}] Sessão não encontrada.")
         return
+        
+    speech_callbacks = getattr(session, 'speech_callbacks', None)
 
     while True:
         await asyncio.sleep(0.2)
@@ -407,13 +501,31 @@ async def enviar_mensagens_morador(writer: asyncio.StreamWriter, call_id: str):
 
         msg = session_manager.get_message_for_resident(call_id)
         if msg:
+            # Definir o estado como IA_TURN antes de começar a falar
+            logger.info(f"[{call_id}] [TURNO] Morador: Alterando estado para IA_TURN antes de sintetizar fala (msg: {msg[:30]}...)")
             session.resident_state = "IA_TURN"
+            
+            # Resetar a detecção de áudio para evitar eco
+            if speech_callbacks:
+                speech_callbacks.reset_audio_detection()
+            else:
+                logger.warning(f"[{call_id}] [TURNO] Morador: Speech callbacks não encontrado para reset!")
+                
             call_logger.log_synthesis_start(msg, is_visitor=False)
 
+            logger.info(f"[{call_id}] [TURNO] Morador: Sintetizando áudio durante IA_TURN")
             audio_resposta = await sintetizar_fala_async(msg)
 
             if audio_resposta:
+                logger.info(f"[{call_id}] [TURNO] Morador: Enviando áudio durante IA_TURN ({len(audio_resposta)} bytes)")
                 await enviar_audio(writer, audio_resposta, call_id=call_id, origem="Morador")
+                
+                # Aguardar um pequeno delay após enviar o áudio para evitar capturar o próprio áudio
+                logger.info(f"[{call_id}] [TURNO] Morador: Aguardando {POST_AUDIO_DELAY_SECONDS}s após enviar áudio")
+                await asyncio.sleep(POST_AUDIO_DELAY_SECONDS)
+                
+                # Mudar para USER_TURN após terminar de falar
+                logger.info(f"[{call_id}] [TURNO] Morador: Alterando estado para USER_TURN após enviar áudio")
                 session.resident_state = "USER_TURN"
 
 async def enviar_audio(writer, dados_audio, call_id=None, origem=None):
