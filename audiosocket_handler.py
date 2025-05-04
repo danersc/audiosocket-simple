@@ -118,7 +118,6 @@ async def check_terminate_flag(session, call_id, role, call_logger=None):
     except asyncio.TimeoutError:
         return False
 
-
 async def send_goodbye_and_terminate(writer, session, call_id, role, call_logger=None):
     """
     Envia uma mensagem de despedida final e encerra a conexão.
@@ -391,14 +390,22 @@ async def iniciar_servidor_audiosocket_morador(reader, writer):
     call_id_bytes = await reader.readexactly(length)
     call_id = str(uuid.UUID(bytes=call_id_bytes))
 
-    # Cria sessão com o call_id fornecido
-    session_manager.create_session(call_id)
+    session = session_manager.get_session(call_id)
+    if not session:
+        session = session_manager.create_session(call_id)
+
+    # CRÍTICO: Definir fluxo se não existir
+    from conversation_flow import ConversationFlow
+    if not hasattr(session, "flow") or session.flow is None:
+        session.flow = ConversationFlow(extension_manager=extension_manager)
+
     resource_manager.register_connection(call_id, "resident", reader, writer)
+
+    # Processar evento especial que indica que o morador atendeu
+    session_manager.process_resident_text(call_id, "AUDIO_CONNECTION_ESTABLISHED")
 
     task1 = asyncio.create_task(receber_audio_morador(reader, call_id))
     task2 = asyncio.create_task(enviar_mensagens_morador(writer, call_id))
-
-    session = session_manager.get_session(call_id)
 
     while True:
         if await check_terminate_flag(session, call_id, "morador", call_logger=CallLoggerManager.get_logger(call_id)):

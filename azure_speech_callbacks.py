@@ -75,7 +75,20 @@ class SpeechCallbacks:
             elif self.process_callback:
                 # Usar callback customizado para o morador
                 import asyncio
-                asyncio.create_task(self.process_callback(text, b''.join(self.audio_buffer)))
+                # Criar uma função que executa a coroutine corretamente em uma thread separada
+                def run_async_process():
+                    try:
+                        asyncio.run(self.process_callback(text, b''.join(self.audio_buffer)))
+                        self.log_event("PROCESS_CALLBACK_COMPLETED", f"Processamento de texto concluído para morador")
+                    except Exception as e:
+                        self.log_event("PROCESS_CALLBACK_ERROR", f"Erro: {e}")
+                
+                # Executar em uma thread em segundo plano
+                import threading
+                process_thread = threading.Thread(target=run_async_process)
+                process_thread.daemon = True
+                process_thread.start()
+                self.log_event("PROCESS_CALLBACK_STARTED", "Iniciado processamento de texto do morador em thread separada")
                 
             self.audio_buffer.clear()
 
@@ -92,7 +105,21 @@ class SpeechCallbacks:
             if len(self.audio_buffer) > 0 and self.process_callback and not self.is_visitor:
                 import asyncio
                 self.log_event("PROCESSING_AUDIO_WITHOUT_RECOGNITION", f"Buffer size: {len(self.audio_buffer)}")
-                asyncio.create_task(self.process_callback(None, b''.join(self.audio_buffer)))
+                
+                # Usar a mesma abordagem de thread separada
+                def run_async_process_nomatch():
+                    try:
+                        asyncio.run(self.process_callback(None, b''.join(self.audio_buffer)))
+                        self.log_event("PROCESS_CALLBACK_NOMATCH_COMPLETED", f"Processamento de áudio sem reconhecimento concluído")
+                    except Exception as e:
+                        self.log_event("PROCESS_CALLBACK_NOMATCH_ERROR", f"Erro: {e}")
+                
+                # Executar em uma thread em segundo plano
+                import threading
+                process_thread = threading.Thread(target=run_async_process_nomatch)
+                process_thread.daemon = True
+                process_thread.start()
+                self.log_event("PROCESS_CALLBACK_NOMATCH_STARTED", "Iniciado processamento de áudio sem reconhecimento em thread separada")
                 
             self.audio_buffer.clear()
 

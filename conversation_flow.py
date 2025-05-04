@@ -206,7 +206,6 @@ class ConversationFlow:
             session_manager.enfileirar_visitor(session_id, "A chamada já foi encerrada. Obrigado.")
         else:
             session_manager.enfileirar_visitor(session_id, "Aguarde, por favor.")
-
     # ---------------
     # RESIDENT
     # ---------------
@@ -438,7 +437,6 @@ class ConversationFlow:
         else:
             # Estado VALIDADO ou outro
             session_manager.enfileirar_resident(session_id, "Ainda estou preparando a chamada, aguarde.")
-
     # ----------------------------------------------------
     #  PROCESSO DE CHAMADA AO MORADOR (ASSÍNCRONO)
     # ----------------------------------------------------
@@ -529,7 +527,6 @@ class ConversationFlow:
         # Finaliza o processo
         self.state = FlowState.FINALIZADO
         self._finalizar(session_id, session_manager)
-
 
     def enviar_clicktocall(self, morador_voip_number: str, guid: str):
         """
@@ -640,7 +637,6 @@ class ConversationFlow:
         except Exception as e:
             logger.error(f"[Flow] AMQP: Erro inesperado ao enviar clicktocall: {e}", exc_info=True)
             return False
-
     # ----------------------------------------------------
     # FINALIZAR (chamar end_session, etc.)
     # ----------------------------------------------------
@@ -724,7 +720,7 @@ class ConversationFlow:
         # sejam enviadas e ouvidas
         self._schedule_active_hangup(session_id, session_manager)
         logger.info(f"[Flow] Finalização programada com encerramento ativo KIND_HANGUP para sessão {session_id}")
-    
+
     def _schedule_active_hangup(self, session_id: str, session_manager, delay=5.0):
         """
         Agenda o envio de KIND_HANGUP ativo após um delay para encerrar a chamada.
