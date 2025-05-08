@@ -170,6 +170,9 @@ async def send_goodbye_and_terminate(writer, session, call_id, role, call_logger
             # Aguardar um tempo para que a mensagem seja ouvida
             logger.info(f"[{call_id}] Aguardando {GOODBYE_DELAY_SECONDS}s para o {role} ouvir a despedida")
             await asyncio.sleep(GOODBYE_DELAY_SECONDS)
+            EXTRA_GRACEFUL_DELAY = 2.0  # segundos adicionais de "respiro"
+            logger.info(f"[{call_id}] Aguardando {EXTRA_GRACEFUL_DELAY}s adicionais para garantir reprodução completa")
+            await asyncio.sleep(EXTRA_GRACEFUL_DELAY)
 
             # Verificar se é o teste específico com a mensagem de finalização
             if role == "visitante" and session.intent_data.get("test_hangup") == True:
