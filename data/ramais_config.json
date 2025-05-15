@@ -1,0 +1,13 @@
+{
+  "ramais": [
+    {
+      "id": 10,
+      "ramal_ia": "2018519",
+      "ramal_retorno": "2018520",
+      "ip_servidor": "18.231.197.181",
+      "porta_ia": 8101,
+      "porta_retorno": 8201,
+      "condominio_id": 15
+    }
+  ]
+}
