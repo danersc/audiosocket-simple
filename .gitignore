@@ -128,3 +128,4 @@ __pycache__/session_manager.cpython-311.pyc
 .env
 ai/models/__pycache__/*
 audio/cache/*
+audio/debug/*
