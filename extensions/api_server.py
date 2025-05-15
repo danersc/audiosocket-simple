@@ -16,10 +16,9 @@ class APIServer:
     Fornece endpoints para status, atualização de configurações, etc.
     """
     
-    def __init__(self, server_manager: ServerManager, config_persistence: ConfigPersistence, db_connector: DBConnector):
+    def __init__(self, server_manager: ServerManager, config_persistence: ConfigPersistence):
         self.server_manager = server_manager
         self.config_persistence = config_persistence
-        self.db_connector = db_connector
         self.app = web.Application()
         self.setup_routes()
     
